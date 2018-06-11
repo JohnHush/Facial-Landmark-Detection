@@ -10,22 +10,25 @@ from os.path import isfile, join
 #headpose = tf.placeholder(tf.float32, shape=[None, 5])
 
 
-mypath = "/media/dongy/Windows7_OS/Users/Owner/Desktop/Life with Divine/MTFL/"
+mypath = "/Users/pitaloveu/working_data/MTFL"
 train= "training.txt"
 #i,l1,l2,l3,l4,l5,l6,l7,l8,l9,l10,g,s,gl,p = np.genfromtxt("/media/dongy/Windows7_OS/Users/Owner/Desktop/Life with Divine/MTFL/training.txt", delimiter=" ", unpack=True)
 
 i,l1,l2,l3,l4,l5,l6,l7,l8,l9,l10,g,s,gl,p = np.genfromtxt(join(mypath,train), delimiter=" ", unpack=True)
 i= np.genfromtxt(join(mypath, train), delimiter=" ",usecols=0, dtype=str, unpack=True)
 
+i = np.array( list( map( lambda s: s.replace( '\\', '/' ) , i ) ) )
 
 onlyfiles = [ f for f in i if isfile(join(mypath,f))]
 
+print( join( mypath, 'lfw_5590/Aaron_Eckhart_0001.jpg' ))
+print ( isfile( join( mypath, 'lfw_5590/Aaron_Eckhart_0001.jpg ') ) )
 images = np.empty(len(onlyfiles),dtype=object)
 for n in range(0, 1000):
     images[n] = cv2.resize(cv2.imread( join(mypath, onlyfiles[n]),0),(40,40))
 
-
-
+print( len(l1) )
+print ( l1)
 
 l1=np.transpose(np.reshape(l1,(-1,10000)))
 l2=np.transpose(np.reshape(l2,(-1,10000)))

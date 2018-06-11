@@ -135,9 +135,10 @@ train_step = tf.train.AdamOptimizer(1e-3).minimize(error)
 
 with tf.Session() as sess:
     sess.run(tf.initialize_all_variables())
-    for x in range(1000):
+    for x in range(100000):
         i, j, k, l, m, n = get_next_batch(x)
-        print(x, sess.run(error,
+        if ( x%100==0 ):
+            print(x, sess.run(error,
                           feed_dict={image: i, landmark: j, gender: k, smile: l, glasses: m, headpose: n
                     }))
         sess.run(train_step,
