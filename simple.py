@@ -5,6 +5,8 @@ from keras.layers import Dropout, Reshape, Flatten
 from keras.layers import Dense, Conv2D, MaxPooling2D
 from PrepareData import get_next_batch
 
+import keras.layers as KL
+
 def weight_variable(shape):
     initial = tf.truncated_normal(shape, stddev=0.1)
     return tf.Variable(initial)
