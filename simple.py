@@ -1,122 +1,164 @@
-import keras
+# implement Facial Landmark Detection of TCDCN
+# using tensorflow custom Estimator and Dataset API
+# written by John Hush in Chengdu
+# 06/19/2018
+# cft
+
 import tensorflow as tf
-from keras import backend as K
-from keras.layers import Dropout, Reshape, Flatten
-from keras.layers import Dense, Conv2D, MaxPooling2D
-from PrepareData import get_next_batch
+from fetchData import *
+#from tensorflow.python import debug as tf_debug
 
-import keras.layers as KL
+def model( features, labels, mode, params ):
+    # in the feature columns, user should provide features including
+    # images and labels
+    # the transfer will be done by tf automatically, e.g one-hot transformation
+    # images = tf.feature_column.input_layer(features, params['feature_columns'])
 
-def weight_variable(shape):
-    initial = tf.truncated_normal(shape, stddev=0.1)
-    return tf.Variable(initial)
+    # directly use features and labels dict
+    images = features['image']
 
-def bias_variable(shape):
-    initial = tf.constant(0.1, shape=shape)
-    return tf.Variable(initial)
+    label_landmark = labels['landmarks']
 
-#set Keras session to tensorflow to initiate from placeholder
+    label_gender   = tf.add ( labels['gender'] , tf.constant(-1 , dtype = tf.int64 ) )
+    label_smile    = tf.add ( labels['smile'] , tf.constant(-1 , dtype = tf.int64 ) )
+    label_glasses  = tf.add ( labels['glasses'] , tf.constant(-1 , dtype = tf.int64 ) )
+    label_pose     = tf.add ( labels['pose'] , tf.constant(-1 , dtype = tf.int64 ) )
 
-sess = tf.Session()
-K.set_session(sess)
-K.set_learning_phase(1)
-image = tf.placeholder(tf.float32, shape=[None, 40, 40])
-landmark = tf.placeholder(tf.float32, shape=[None, 10])
-gender = tf.placeholder(tf.float32, shape=[None, 2])
-smile = tf.placeholder(tf.float32, shape=[None, 2])
-glasses = tf.placeholder(tf.float32, shape=[None, 2])
-headpose = tf.placeholder(tf.float32, shape=[None, 5])
+    # generate one-hot tensor for classification tasks
 
-input_image = tf.reshape(image,[-1,40,40,1])
-#model = Sequential()
-h_conv1 = Conv2D(16, (5,5), activation='tanh')(input_image)
-h_pool1 = MaxPooling2D((2,2))(h_conv1)
-#model.add(Conv2D(16, (5,5), activation='tenH' input_shape=(40,40,1)))
-#model.add(MaxPooling2D((2,2)))
+    label_gender_oh = tf.one_hot( label_gender, depth = 2 , axis = -1 )
+    label_smile_oh = tf.one_hot( label_smile , depth = 2 , axis = -1 )
+    label_glasses_oh = tf.one_hot( label_glasses, depth = 2 , axis = -1 )
+    label_pose_oh = tf.one_hot( label_pose , depth = 5 , axis = -1 )
 
-h_conv2 = Conv2D(48, (3,3), activation='tanh' )(h_pool1)
-h_pool2 = MaxPooling2D((2,2))(h_conv2)
-#model.add(Conv2D(48, (3,3), activation='tenH' ))
-#model.add(MaxPooling2D((2,2)))
+    # reshape the input into [batch_size, 40 , 40 , 1 ]
+    images = tf.reshape( images , shape = [-1 , 40, 40, 1 ] )
 
-h_conv3 = Conv2D(64, (3,3), activation='tanh' )(h_pool2)
-h_pool3 = MaxPooling2D((2,2))(h_conv3)
+    images = tf.Print( images , [images] , "what's wrong here", summarize =100 )
+    
 
-#model.add(Conv2D(64, (3,3), activation='tenH' ))
-#model.add(MaxPooling2D((2,2)))
-h_conv4 = Conv2D(64, (2,2), activation='tanh' )(h_pool3)
+    # using tf.layers module to build the rest of the layers
+    # maybe next time could try Keras ^_^
 
-#model.add(Conv2D(64, (2,2), activation='tenH' ))
-h_pool4_flat = tf.reshape(h_conv4, [-1, 2 * 2 * 64])
-h_fc1 = Dense(100, activation='tanh')(h_pool4_flat)
-h_fc1_drop = Dropout(0.5)(h_fc1)
-#model.add(Flatten())
-#model.add(Dense(100, activation='tenH' ))
-#model.add(Dropout(0.5))
+    #conv1 = tf.nn.relu( images )
+    #conv1 = tf.Print( conv1 , [conv1] , "convocnvocnvocnvocnvocnvo1" , summarize = 200 )
 
-#h_fc1_drop= model.layer[5].output
-# gender
-W_fc_gender = weight_variable([100, 2])
-b_fc_gender = bias_variable([2])
-y_gender = tf.matmul(h_fc1_drop, W_fc_gender) + b_fc_gender
-# smile
-W_fc_smile = weight_variable([100, 2])
-b_fc_smile = bias_variable([2])
-y_smile = tf.matmul(h_fc1_drop, W_fc_smile) + b_fc_smile
-# glasses
-W_fc_glasses = weight_variable([100, 2])
-b_fc_glasses = bias_variable([2])
-y_glasses =tf.matmul(h_fc1_drop, W_fc_glasses) + b_fc_glasses
-# headpose
-W_fc_headpose = weight_variable([100, 5])
-b_fc_headpose = bias_variable([5])
-y_headpose = tf.matmul(h_fc1_drop, W_fc_headpose) + b_fc_headpose
+    conv1 = tf.layers.conv2d(
+            inputs = images,
+            #inputs = conv1,
+            filters = 16,
+            kernel_size = [5,5], 
+            kernel_initializer = tf.zeros_initializer())
 
+    conv1 = tf.Print( conv1 , [conv1] , "convocnvocnvocnvocnvocnvo1" , summarize = 200 )
 
-# landmark
-W_fc_landmark = weight_variable([100, 10])
-b_fc_landmark = bias_variable([10])
-y_landmark = tf.matmul(h_fc1_drop, W_fc_landmark) + b_fc_landmark
+    pool1 = tf.layers.max_pooling2d( inputs=conv1, pool_size=[2, 2], strides=2 )
+    
+    conv2 = tf.layers.conv2d(
+            inputs = pool1,
+            filters = 48,
+            kernel_size = [3,3],
+            activation = tf.nn.relu )
+    
+    pool2 = tf.layers.max_pooling2d( inputs=conv2, pool_size=[2, 2], strides=2 )
 
-# gender
-W_fc_gender = weight_variable([100, 2])
-b_fc_gender = bias_variable([2])
-y_gender = tf.matmul(h_fc1_drop, W_fc_gender) + b_fc_gender
-# smile
-W_fc_smile = weight_variable([100, 2])
-b_fc_smile = bias_variable([2])
-y_smile = tf.matmul(h_fc1_drop, W_fc_smile) + b_fc_smile
-# glasses
-W_fc_glasses = weight_variable([100, 2])
-b_fc_glasses = bias_variable([2])
-y_glasses = tf.matmul(h_fc1_drop, W_fc_glasses) + b_fc_glasses
-# headpose
-W_fc_headpose = weight_variable([100, 5])
-b_fc_headpose = bias_variable([5])
-y_headpose = tf.matmul(h_fc1_drop, W_fc_headpose) + b_fc_headpose
+    conv3 = tf.layers.conv2d(
+            inputs = pool2,
+            filters = 64,
+            kernel_size = [3,3],
+            activation = tf.nn.relu )
+    
+    pool3 = tf.layers.max_pooling2d( inputs=conv3, pool_size=[2, 2], strides=2 )
+
+    conv4 = tf.layers.conv2d(
+            inputs = pool3,
+            filters = 64,
+            kernel_size = [2,2],
+            activation = tf.nn.relu )
+
+    # flatten the tensor
+    conv4_flatten = tf.reshape( conv4 , shape = [ -1, 2 * 2 * 64 ] )
 
 
-error = 1 / 2 * tf.reduce_sum(tf.square(landmark - y_landmark)) + \
-        tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(logits=y_gender,labels=gender)) + \
-        tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(logits=y_smile, labels=smile)) + \
-        tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(logits=y_glasses,labels= glasses)) + \
-        tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits(logits=y_headpose,labels= headpose))+\
-        2*tf.nn.l2_loss(W_fc_landmark)+\
-        2*tf.nn.l2_loss(W_fc_glasses)+\
-        2*tf.nn.l2_loss(W_fc_gender)+\
-        2*tf.nn.l2_loss(W_fc_headpose)+\
-        2*tf.nn.l2_loss(W_fc_smile)
+    # shared feature
+    shared_feature = tf.layers.dense(
+            inputs = conv4_flatten , units = 100, activation = tf.nn.relu )
 
-#train
-train_step = tf.train.AdamOptimizer(1e-3).minimize(error)
+    # drop out 
+    shared_feature_dropout = tf.layers.dropout(
+            inputs = shared_feature , rate=0.4, training=mode == tf.estimator.ModeKeys.TRAIN )
 
-with tf.Session() as sess:
-    sess.run(tf.initialize_all_variables())
-    for x in range(100000):
-        i, j, k, l, m, n = get_next_batch(x)
-        if ( x%100==0 ):
-            print(x, sess.run(error,
-                          feed_dict={image: i, landmark: j, gender: k, smile: l, glasses: m, headpose: n
-                    }))
-        sess.run(train_step,
-                 feed_dict={image: i, landmark: j, gender: k, smile: l, glasses: m, headpose: n})
+    # adding multiple headers
+    landmarks = tf.layers.dense( inputs = shared_feature_dropout , units = 10 )
+    gender    = tf.layers.dense( inputs = shared_feature_dropout , units = 2 )
+    smile     = tf.layers.dense( inputs = shared_feature_dropout , units = 2 )
+    glasses   = tf.layers.dense( inputs = shared_feature_dropout , units = 2 )
+    pose      = tf.layers.dense( inputs = shared_feature_dropout , units = 5 )
+
+    predictions = {
+            "landmarks" : landmarks ,
+            "gender" : tf.argmax( input = gender , axis = 1),
+            "gender_probability" : tf.nn.softmax( gender , name = "gender_softmax" ),
+            "smile": tf.argmax( input = smile , axis = 1 ),
+            "smile_probability" : tf.nn.softmax( smile , name = "smile_softmax" ),
+            "glasses": tf.argmax( input = glasses , axis = 1 ),
+            "glasses_probability" : tf.nn.softmax( glasses , name = "glasses_softmax" ),
+            "psoe": tf.argmax( input = pose , axis = 1 ),
+            "pose_probability" : tf.nn.softmax( pose , name = "pose_softmax" )
+            }
+
+    if mode == tf.estimator.ModeKeys.PREDICT:
+        return tf.estimator.EstimatorSpec( mode=mode, predictions=predictions )
+
+    # generate LOSS
+    loss_landmark = tf.losses.mean_squared_error( label_landmark , landmarks )
+    loss_gender   = tf.losses.softmax_cross_entropy( label_gender_oh , gender )
+    loss_smile    = tf.losses.softmax_cross_entropy( label_smile_oh , smile )
+    loss_glasses  = tf.losses.softmax_cross_entropy( label_glasses_oh , glasses )
+    loss_pose     = tf.losses.softmax_cross_entropy( label_pose_oh , pose )
+
+    total_loss = tf.add_n( [loss_landmark, loss_gender, loss_smile, 
+        loss_glasses , loss_pose] )
+#    total_loss = loss_landmark + loss_gender + loss_smile + loss_glasses + loss_pose
+
+    # specify all the configures of Estimator
+    if mode == tf.estimator.ModeKeys.TRAIN:
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.001)
+        train_op = optimizer.minimize(
+                loss = total_loss,
+                global_step=tf.train.get_global_step())
+        return tf.estimator.EstimatorSpec( mode=mode , loss = total_loss, train_op = train_op )
+
+    evaluate_metric_op = {
+            "mean_cosine_distance_landmarks" : tf.metrics.mean_cosine_distance(
+                label_landmark , landmarks , dim = 1 ) ,
+
+            "accuracy_gender" : tf.metrics.accuracy(
+                label_gender , predictions = predictions['gender'] ),
+
+            "accuracy_smile" : tf.metrics.accuracy(
+                label_smile , predictions = predictions['smile'] ),
+
+            "accuracy_glasses" : tf.metrics.accuracy(
+                label_glasses , predictions = predictions['glasses'] ),
+
+            "accuracy_pose" : tf.metrics.accuracy(
+                label_pose , predictions = predictions['pose'] )
+            }
+    return tf.estimator.EstimatorSpec(
+            mode=mode, loss = total_loss, eval_metric_ops = evaluate_metric_op )
+
+if __name__ == "__main__":
+    # make a regressor
+    tcdcn_regressor = tf.estimator.Estimator(
+            model_fn = model , model_dir="/tmp/tcdcn_regressor_model")
+
+    tensors_to_log = { "gender" : "gender_softmax" }
+    logging_hook = tf.train.LoggingTensorHook(
+            tensors=tensors_to_log, every_n_iter=50)
+
+    tcdcn_regressor.train( 
+            input_fn = lambda : fetch_one_batch( "/Users/pitaloveu/working_data/MTFL" 
+                , if_train = True , batch_size = 8 ) ,
+            steps = 10000 , 
+            hooks = [logging_hook] )

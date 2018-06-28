@@ -48,7 +48,8 @@ def load_path( data_prefix , if_train = True ):
 
     return image_path , landmarks, gender, smile, glasses, pose
 
-def fetch_one_batch( data_prefix, if_train = True , batch_size = 32 ):
+def train_eval_input_fn( data_prefix, if_train = True , batch_size = 32 ):
+
     i, l, g, s, gl, p = load_path( data_prefix, if_train )
 
     dataset = tf.data.Dataset.from_tensor_slices( (i, l, g, s, gl, p ) )
@@ -61,24 +62,29 @@ def input_parser( image_path, landmarks, gender, smile, glasses, pose ):
 
     content = tf.read_file( image_path )
     tf_image = tf.image.decode_jpeg( content , channels = 1 )
-    resized_image = tf.image.resize_images( tf_image , [ 40, 40 ] )
-    resized_image = tf.scalar_mul( 1./255,  resized_image )
+    tf_image = tf.image.resize_images( tf_image , [ 40, 40 ] )
+    tf_image = tf.scalar_mul( 1./255,  tf_image )
+    tf_image = tf.reshape( tf_image , [ 40 * 40 * 1 ] )
+    tf_image = tf_image[500:600]
 
-    #return resized_image, landmarks, gender, smile, glasses, pose 
-    # return dict intead of list to accomodate the input function in Estimator
-    return dict( image = resized_image ) , dict ( landmarks = landmarks, 
-            gender = gender, smile = smile, glasses = glasses, pose = pose )
+    keys = ['landmarks' , 'gender' , 'smile' , 'glasses' , 'pose' ]
+
+    #return dict( image = tf_image ) , dict( zip ( keys , [landmarks, gender, smile, glasses, pose] ) )
+
+    return dict( image = tf_image , landmarks = landmarks,
+            gender = gender, smile = smile, glasses = glasses, pose = pose ) , tf.constant(1)
+    #return dict( image = tf_image ) , tf.add (smile , -1)
 
 if __name__ == "__main__":
 
     with tf.Session() as sess:
         #image, l, g, s, gl, p = sess.run( fetch_one_batch( args.data_path , batch_size = 20 ))
-        image, labels = sess.run( fetch_one_batch( args.data_path , batch_size = 20 ))
+        image, labels = sess.run( train_eval_input_fn( args.data_path , batch_size = 20 ))
         for k in range(20):
             canvas = image['image'][k]
             landmark = labels['landmarks'][k]
 
-            test = canvas[:,:,0]
+            test = canvas[:,:,:]
             # draw left eye
             x1 = int( landmark[0]) 
             y1 = int(landmark[5])
