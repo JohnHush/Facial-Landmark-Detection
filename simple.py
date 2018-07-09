@@ -6,23 +6,19 @@
 
 import tensorflow as tf
 from fetchData import *
-#from tensorflow.python import debug as tf_debug
+
+from tensorflow.python import debug as tf_debug
 
 def model( features, labels, mode, params ):
-    # in the feature columns, user should provide features including
-    # images and labels
-    # the transfer will be done by tf automatically, e.g one-hot transformation
-    # images = tf.feature_column.input_layer(features, params['feature_columns'])
 
     # directly use features and labels dict
     images = features['image']
 
     label_landmark = labels['landmarks']
-
-    label_gender   = tf.add ( labels['gender'] , tf.constant(-1 , dtype = tf.int64 ) )
-    label_smile    = tf.add ( labels['smile'] , tf.constant(-1 , dtype = tf.int64 ) )
-    label_glasses  = tf.add ( labels['glasses'] , tf.constant(-1 , dtype = tf.int64 ) )
-    label_pose     = tf.add ( labels['pose'] , tf.constant(-1 , dtype = tf.int64 ) )
+    label_gender   = labels['gender']  - 1
+    label_smile    = labels['smile']   - 1
+    label_glasses  = labels['glasses'] - 1
+    label_pose     = labels['pose']    - 1 
 
     # generate one-hot tensor for classification tasks
 
@@ -31,29 +27,17 @@ def model( features, labels, mode, params ):
     label_glasses_oh = tf.one_hot( label_glasses, depth = 2 , axis = -1 )
     label_pose_oh = tf.one_hot( label_pose , depth = 5 , axis = -1 )
 
-    # reshape the input into [batch_size, 40 , 40 , 1 ]
-    images = tf.reshape( images , shape = [-1 , 40, 40, 1 ] )
-
-    images = tf.Print( images , [images] , "what's wrong here", summarize =100 )
-    
-
     # using tf.layers module to build the rest of the layers
     # maybe next time could try Keras ^_^
 
-    #conv1 = tf.nn.relu( images )
-    #conv1 = tf.Print( conv1 , [conv1] , "convocnvocnvocnvocnvocnvo1" , summarize = 200 )
-
     conv1 = tf.layers.conv2d(
             inputs = images,
-            #inputs = conv1,
             filters = 16,
             kernel_size = [5,5], 
-            kernel_initializer = tf.zeros_initializer())
-
-    conv1 = tf.Print( conv1 , [conv1] , "convocnvocnvocnvocnvocnvo1" , summarize = 200 )
+            activation = tf.nn.relu )
 
     pool1 = tf.layers.max_pooling2d( inputs=conv1, pool_size=[2, 2], strides=2 )
-    
+
     conv2 = tf.layers.conv2d(
             inputs = pool1,
             filters = 48,
@@ -78,7 +62,6 @@ def model( features, labels, mode, params ):
 
     # flatten the tensor
     conv4_flatten = tf.reshape( conv4 , shape = [ -1, 2 * 2 * 64 ] )
-
 
     # shared feature
     shared_feature = tf.layers.dense(
@@ -117,17 +100,16 @@ def model( features, labels, mode, params ):
     loss_glasses  = tf.losses.softmax_cross_entropy( label_glasses_oh , glasses )
     loss_pose     = tf.losses.softmax_cross_entropy( label_pose_oh , pose )
 
-    total_loss = tf.add_n( [loss_landmark, loss_gender, loss_smile, 
-        loss_glasses , loss_pose] )
-#    total_loss = loss_landmark + loss_gender + loss_smile + loss_glasses + loss_pose
+    #total_loss = loss_landmark + loss_gender + loss_smile + loss_glasses + loss_pose
+    total_loss = loss_gender + loss_smile + loss_glasses + loss_pose
 
     # specify all the configures of Estimator
     if mode == tf.estimator.ModeKeys.TRAIN:
-        optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.001)
+        optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.00005)
         train_op = optimizer.minimize(
-                loss = total_loss,
+                loss = loss_pose,
                 global_step=tf.train.get_global_step())
-        return tf.estimator.EstimatorSpec( mode=mode , loss = total_loss, train_op = train_op )
+        return tf.estimator.EstimatorSpec( mode=mode , loss = loss_pose , train_op = train_op )
 
     evaluate_metric_op = {
             "mean_cosine_distance_landmarks" : tf.metrics.mean_cosine_distance(
@@ -145,20 +127,25 @@ def model( features, labels, mode, params ):
             "accuracy_pose" : tf.metrics.accuracy(
                 label_pose , predictions = predictions['pose'] )
             }
+
     return tf.estimator.EstimatorSpec(
             mode=mode, loss = total_loss, eval_metric_ops = evaluate_metric_op )
 
 if __name__ == "__main__":
     # make a regressor
     tcdcn_regressor = tf.estimator.Estimator(
-            model_fn = model , model_dir="/tmp/tcdcn_regressor_model")
+            model_fn = model , model_dir="/tmp/tcdcn_test_model")
 
-    tensors_to_log = { "gender" : "gender_softmax" }
+    tensors_to_log = { "pose_softmax" }
     logging_hook = tf.train.LoggingTensorHook(
             tensors=tensors_to_log, every_n_iter=50)
 
+    #debug_hook = tf_debug.LocalCLIDebugHook()
+
+    #debug_hook = tf_debug.TensorBoardDebugHook("JohndeMacBook-Pro.local:2333")
+
     tcdcn_regressor.train( 
-            input_fn = lambda : fetch_one_batch( "/Users/pitaloveu/working_data/MTFL" 
-                , if_train = True , batch_size = 8 ) ,
+            input_fn = lambda : train_eval_input_fn( "/Users/pitaloveu/working_data/MTFL" 
+                , if_train = True , batch_size = 128 ) ,
             steps = 10000 , 
             hooks = [logging_hook] )
