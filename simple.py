@@ -105,7 +105,10 @@ def model( features, labels, mode, params ):
 
     # specify all the configures of Estimator
     if mode == tf.estimator.ModeKeys.TRAIN:
-        optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.00005)
+        #optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.00005)
+        optimizer = tf.train.AdamOptimizer( learning_rate= 0.001, \
+                                            beta1 = 0.9 , \
+                                            beta2 = 0.99 )
         train_op = optimizer.minimize(
                 loss = loss_pose,
                 global_step=tf.train.get_global_step())
