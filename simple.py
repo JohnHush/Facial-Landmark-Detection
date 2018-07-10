@@ -100,6 +100,11 @@ def model( features, labels, mode, params ):
     loss_glasses  = tf.losses.softmax_cross_entropy( label_glasses_oh , glasses )
     loss_pose     = tf.losses.softmax_cross_entropy( label_pose_oh , pose )
 
+    tf.summary.scalar( "gender loss"   , loss_gender )
+    tf.summary.scalar( "smile loss"    , loss_smile )
+    tf.summary.scalar( "glasses loss"  , loss_glasses )
+    tf.summary.scalar( "pose loss"     , loss_pose )
+    tf.summary.scalar( "landmark loss" , loss_landmark )
     #total_loss = loss_landmark + loss_gender + loss_smile + loss_glasses + loss_pose
     total_loss = loss_gender + loss_smile + loss_glasses + loss_pose
 
@@ -110,9 +115,9 @@ def model( features, labels, mode, params ):
                                             beta1 = 0.9 , \
                                             beta2 = 0.99 )
         train_op = optimizer.minimize(
-                loss = loss_pose,
+                loss = total_loss,
                 global_step=tf.train.get_global_step())
-        return tf.estimator.EstimatorSpec( mode=mode , loss = loss_pose , train_op = train_op )
+        return tf.estimator.EstimatorSpec( mode=mode , loss = total_loss , train_op = train_op )
 
     evaluate_metric_op = {
             "mean_cosine_distance_landmarks" : tf.metrics.mean_cosine_distance(
@@ -148,7 +153,7 @@ if __name__ == "__main__":
     #debug_hook = tf_debug.TensorBoardDebugHook("JohndeMacBook-Pro.local:2333")
 
     tcdcn_regressor.train( 
-            input_fn = lambda : train_eval_input_fn( "/Users/pitaloveu/working_data/MTFL" 
+            input_fn = lambda : train_eval_input_fn( "/home/jh/working_data/MTFL" 
                 , if_train = True , batch_size = 128 ) ,
             steps = 10000 , 
             hooks = [logging_hook] )
