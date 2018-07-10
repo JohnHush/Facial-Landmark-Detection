@@ -63,12 +63,20 @@ def input_parser( image_path, landmarks, gender, smile, glasses, pose ):
 
     content = tf.read_file( image_path )
     tf_image = tf.image.decode_jpeg( content , channels = 1 )
+
+    # scale the landmarks in the range 0 to 1
+    height = tf.to_double( tf.shape( tf_image )[0] )
+    width  = tf.to_double( tf.shape( tf_image )[1] )
+
+    transformed_landmarks = tf.concat( [ landmarks[0:5] / width, \
+            landmarks[5:10] / height] , -1 )
+
     tf_image = tf.image.resize_images( tf_image , [ 40, 40 ] )
     tf_image = tf_image - 128
     tf_image = tf.scalar_mul( 1./255,  tf_image )
     tf_image = tf.reshape( tf_image , [ 40 , 40 , 1 ] )
 
-    return dict( image = tf_image ) , dict ( landmarks = landmarks, 
+    return dict( image = tf_image ) , dict ( landmarks = transformed_landmarks, 
             gender = gender, smile = smile, glasses = glasses, pose = pose )
 
 if __name__ == "__main__":

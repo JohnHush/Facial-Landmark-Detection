@@ -78,6 +78,8 @@ def model( features, labels, mode, params ):
     glasses   = tf.layers.dense( inputs = shared_feature_dropout , units = 2 )
     pose      = tf.layers.dense( inputs = shared_feature_dropout , units = 5 )
 
+    landmarks = tf.sigmoid( landmarks )
+
     predictions = {
             "landmarks" : landmarks ,
             "gender" : tf.argmax( input = gender , axis = 1),
@@ -105,8 +107,8 @@ def model( features, labels, mode, params ):
     tf.summary.scalar( "glasses loss"  , loss_glasses )
     tf.summary.scalar( "pose loss"     , loss_pose )
     tf.summary.scalar( "landmark loss" , loss_landmark )
-    #total_loss = loss_landmark + loss_gender + loss_smile + loss_glasses + loss_pose
-    total_loss = loss_gender + loss_smile + loss_glasses + loss_pose
+
+    total_loss = loss_gender + loss_smile + loss_glasses + loss_pose + loss_landmark
 
     # specify all the configures of Estimator
     if mode == tf.estimator.ModeKeys.TRAIN:
@@ -153,7 +155,7 @@ if __name__ == "__main__":
     #debug_hook = tf_debug.TensorBoardDebugHook("JohndeMacBook-Pro.local:2333")
 
     tcdcn_regressor.train( 
-            input_fn = lambda : train_eval_input_fn( "/home/jh/working_data/MTFL" 
+            input_fn = lambda : train_eval_input_fn( "/Users/pitaloveu/working_data/MTFL" 
                 , if_train = True , batch_size = 128 ) ,
             steps = 10000 , 
             hooks = [logging_hook] )
