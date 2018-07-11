@@ -9,6 +9,48 @@ from fetchData import *
 
 from tensorflow.python import debug as tf_debug
 
+def mean_error_normalized_by_inter_ocular_distance( label_landmarks, \
+        predict_landmarks, weights = None, metrics_collections = None, \
+        updates_collections = None, name = None , which_label = None ):
+    """
+    the mean error will be normalized by the input inter ocular distance,
+    while inter ocular distance is the length between left and right eye,
+    this metric is originally introduced byntone, M. this could be found in
+    the article << Real-time facial feature detection using conditional regression
+    forests >>
+    """
+
+    label_landmarks = tf.to_double( label_landmarks )
+    predict_landmarks = tf.to_double( predict_landmarks )
+    """
+    if which_label == 'left_eye':
+        xcor = label_landmarks[0]
+        ycor = label_landmarks[5]
+        xcor_pred = predict_landmarks[0]
+        ycor_pred = predict_landmarks[5]
+    else:
+        raise NotImplementedError
+
+    error = tf.sqrt(  ( xcor - xcor_pred ) * ( xcor - xcor_pred ) + \
+            ( ycor - ycor_pred ) * ( ycor - ycor_pred  ) )
+
+    inter_ocular_distance = tf.sqrt( tf.square( label_landmarks[0] - label_landmarks[1] ) +\
+                                     tf.square( label_landmarks[5] - label_landmarks[6] ) )
+    """
+
+    error = tf.Variable( 1. , dtype= float )
+    inter_ocular_distance = tf.Variable( 2., dtype= float )
+
+    mean_error , update_op = tf.metrics.mean( error/inter_ocular_distance )
+
+    if metrics_collections:
+        tf.ops.add_to_collections( metrics_collections , mean_error )
+    if updates_collections:
+        tf.ops.add_to_collections( updates_collections , update_op )
+
+    return mean_error , update_op
+
+
 def model( features, labels, mode, params ):
 
     # directly use features and labels dict
@@ -108,7 +150,7 @@ def model( features, labels, mode, params ):
     tf.summary.scalar( "pose loss"     , loss_pose )
     tf.summary.scalar( "landmark loss" , loss_landmark )
 
-    total_loss = loss_gender + loss_smile + loss_glasses + loss_pose + loss_landmark
+    total_loss = loss_gender + loss_smile + loss_glasses + loss_pose + loss_landmark * 100.
 
     # specify all the configures of Estimator
     if mode == tf.estimator.ModeKeys.TRAIN:
@@ -121,41 +163,62 @@ def model( features, labels, mode, params ):
                 global_step=tf.train.get_global_step())
         return tf.estimator.EstimatorSpec( mode=mode , loss = total_loss , train_op = train_op )
 
+    #left_eye_metric = mean_error_normalized_by_inter_ocular_distance( label_landmarks=label_landmark,\
+    #                                                                  predict_landmarks= landmarks, \
+    #                                                                  which_label='left_eye')
     evaluate_metric_op = {
-            "mean_cosine_distance_landmarks" : tf.metrics.mean_cosine_distance(
-                label_landmark , landmarks , dim = 1 ) ,
+            #"left eye hahahaha": left_eye_metric,
+            # "mean_cosine_distance_landmarks" : tf.metrics.mean_cosine_distance(
+            #     label_landmark , landmarks , dim = 1 ) ,
+            #
+             "accuracy_gender" : tf.metrics.accuracy(
+                 label_gender , predictions = predictions['gender'] , name = "heheda"),
 
-            "accuracy_gender" : tf.metrics.accuracy(
-                label_gender , predictions = predictions['gender'] ),
+             "accuracy_smile" : tf.metrics.accuracy(
+                 label_smile , predictions = predictions['smile'] ),
 
-            "accuracy_smile" : tf.metrics.accuracy(
-                label_smile , predictions = predictions['smile'] ),
+             "accuracy_glasses" : tf.metrics.accuracy(
+                 label_glasses , predictions = predictions['glasses'] ),
 
-            "accuracy_glasses" : tf.metrics.accuracy(
-                label_glasses , predictions = predictions['glasses'] ),
-
-            "accuracy_pose" : tf.metrics.accuracy(
-                label_pose , predictions = predictions['pose'] )
+             "accuracy_pose" : tf.metrics.accuracy(
+                 label_pose , predictions = predictions['pose'] )
             }
+
+    tf.summary.scalar("accuracy" , evaluate_metric_op["accuracy_gender"] )
 
     return tf.estimator.EstimatorSpec(
             mode=mode, loss = total_loss, eval_metric_ops = evaluate_metric_op )
 
 if __name__ == "__main__":
+    tf.logging.set_verbosity(tf.logging.INFO)
     # make a regressor
     tcdcn_regressor = tf.estimator.Estimator(
-            model_fn = model , model_dir="/tmp/tcdcn_test_model")
+            model_fn = model , model_dir="/tmp/tcdcn_test_model2")
 
-    tensors_to_log = { "pose_softmax" }
+    tensors_to_log = { "heheda" }
     logging_hook = tf.train.LoggingTensorHook(
-            tensors=tensors_to_log, every_n_iter=50)
+            tensors=tensors_to_log, every_n_iter=5)
 
     #debug_hook = tf_debug.LocalCLIDebugHook()
 
     #debug_hook = tf_debug.TensorBoardDebugHook("JohndeMacBook-Pro.local:2333")
 
-    tcdcn_regressor.train( 
-            input_fn = lambda : train_eval_input_fn( "/Users/pitaloveu/working_data/MTFL" 
-                , if_train = True , batch_size = 128 ) ,
-            steps = 10000 , 
-            hooks = [logging_hook] )
+    # tcdcn_regressor.train(
+    #         input_fn = lambda : train_input_fn( "/Users/pitaloveu/working_data/MTFL"
+    #             , batch_size = 128 ) ,
+    #         steps = 10 )
+    #
+    # evaluete_result = tcdcn_regressor.evaluate(
+    #         input_fn = lambda : evaluate_input_fn( "/Users/pitaloveu/working_data/MTFL"
+    #                                                   ,batch_size = 256 ), \
+    #     hooks = [logging_hook])
+
+    train_spec = tf.estimator.TrainSpec( \
+        input_fn = lambda : train_input_fn( "/Users/pitaloveu/working_data/MTFL" , batch_size= 128 ) , \
+        max_steps = 10000 )
+
+    eval_spec = tf.estimator.EvalSpec( \
+        input_fn = lambda : evaluate_input_fn( "/Users/pitaloveu/working_data/MTFL" , batch_size=256 )
+    )
+
+    tf.estimator.train_and_evaluate( tcdcn_regressor , train_spec= train_spec , eval_spec=eval_spec )

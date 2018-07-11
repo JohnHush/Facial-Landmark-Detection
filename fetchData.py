@@ -49,13 +49,23 @@ def load_path( data_prefix , if_train = True ):
     return image_path , landmarks, gender, smile, glasses, pose
 
 
-def train_eval_input_fn( data_prefix, if_train = True , batch_size = 32 ):
+def train_input_fn( data_prefix, batch_size = 128 ):
 
-    i, l, g, s, gl, p = load_path( data_prefix, if_train )
+    i, l, g, s, gl, p = load_path( data_prefix, True )
 
     dataset = tf.data.Dataset.from_tensor_slices( (i, l, g, s, gl, p ) )
     dataset = dataset.map( input_parser )
     dataset = dataset.repeat().shuffle( 10 * batch_size ).batch( batch_size )
+
+    return dataset
+
+def evaluate_input_fn( data_prefix, batch_size = 128 ):
+
+    i, l, g, s, gl, p = load_path( data_prefix, False )
+
+    dataset = tf.data.Dataset.from_tensor_slices( (i, l, g, s, gl, p ) )
+    dataset = dataset.map( input_parser )
+    dataset = dataset.batch( batch_size )
 
     return dataset
 
