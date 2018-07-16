@@ -55,7 +55,7 @@ def train_input_fn( data_prefix, batch_size = 128 ):
 
     dataset = tf.data.Dataset.from_tensor_slices( (i, l, g, s, gl, p ) )
     dataset = dataset.map( input_parser )
-    dataset = dataset.repeat().shuffle( 10 * batch_size ).batch( batch_size )
+    dataset = dataset.repeat().shuffle( 5 * batch_size ).batch( batch_size )
 
     return dataset
 
@@ -73,6 +73,11 @@ def input_parser( image_path, landmarks, gender, smile, glasses, pose ):
 
     content = tf.read_file( image_path )
     tf_image = tf.image.decode_jpeg( content , channels = 1 )
+
+    # image augmentation using tf image module
+    # 
+    tf_image = tf.image.random_brightness( tf_image , max_delta = 0.5 )
+    tf_image = tf.image.random_contrast( tf_image , 0.2 , 0.7 )
 
     # scale the landmarks in the range 0 to 1
     height = tf.to_double( tf.shape( tf_image )[0] )

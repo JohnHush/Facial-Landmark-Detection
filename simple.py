@@ -5,6 +5,7 @@
 # cft
 
 import tensorflow as tf
+import os
 from fetchData import *
 
 from tensorflow.python import debug as tf_debug
@@ -53,6 +54,8 @@ def mean_error_normalized_by_inter_ocular_distance( label_landmarks, \
 
 def model( features, labels, mode, params ):
 
+    regularizer = tf.contrib.layers.l2_regularizer( scale = 0.01 )
+
     # directly use features and labels dict
     images = features['image']
 
@@ -76,7 +79,8 @@ def model( features, labels, mode, params ):
             inputs = images,
             filters = 16,
             kernel_size = [5,5], 
-            activation = tf.nn.relu )
+            activation = tf.nn.relu,
+            kernel_regularizer = regularizer )
 
     pool1 = tf.layers.max_pooling2d( inputs=conv1, pool_size=[2, 2], strides=2 )
 
@@ -84,7 +88,8 @@ def model( features, labels, mode, params ):
             inputs = pool1,
             filters = 48,
             kernel_size = [3,3],
-            activation = tf.nn.relu )
+            activation = tf.nn.relu,
+            kernel_regularizer = regularizer )
     
     pool2 = tf.layers.max_pooling2d( inputs=conv2, pool_size=[2, 2], strides=2 )
 
@@ -92,7 +97,8 @@ def model( features, labels, mode, params ):
             inputs = pool2,
             filters = 64,
             kernel_size = [3,3],
-            activation = tf.nn.relu )
+            activation = tf.nn.relu,
+            kernel_regularizer = regularizer )
     
     pool3 = tf.layers.max_pooling2d( inputs=conv3, pool_size=[2, 2], strides=2 )
 
@@ -100,38 +106,40 @@ def model( features, labels, mode, params ):
             inputs = pool3,
             filters = 64,
             kernel_size = [2,2],
-            activation = tf.nn.relu )
+            activation = tf.nn.relu,
+            kernel_regularizer = regularizer )
 
     # flatten the tensor
     conv4_flatten = tf.reshape( conv4 , shape = [ -1, 2 * 2 * 64 ] )
 
     # shared feature
     shared_feature = tf.layers.dense(
-            inputs = conv4_flatten , units = 100, activation = tf.nn.relu )
+            inputs = conv4_flatten , units = 100, activation = tf.nn.relu ,
+            kernel_regularizer = regularizer )
 
     # drop out 
     shared_feature_dropout = tf.layers.dropout(
-            inputs = shared_feature , rate=0.4, training=mode == tf.estimator.ModeKeys.TRAIN )
+            inputs = shared_feature , rate=0.8, training=mode == tf.estimator.ModeKeys.TRAIN )
 
     # adding multiple headers
-    landmarks = tf.layers.dense( inputs = shared_feature_dropout , units = 10 )
-    gender    = tf.layers.dense( inputs = shared_feature_dropout , units = 2 )
-    smile     = tf.layers.dense( inputs = shared_feature_dropout , units = 2 )
-    glasses   = tf.layers.dense( inputs = shared_feature_dropout , units = 2 )
-    pose      = tf.layers.dense( inputs = shared_feature_dropout , units = 5 )
+    landmarks = tf.layers.dense( inputs = shared_feature_dropout , units = 10 , kernel_regularizer = regularizer)
+    gender    = tf.layers.dense( inputs = shared_feature_dropout , units = 2, kernel_regularizer = regularizer )
+    smile     = tf.layers.dense( inputs = shared_feature_dropout , units = 2,kernel_regularizer = regularizer )
+    glasses   = tf.layers.dense( inputs = shared_feature_dropout , units = 2, kernel_regularizer = regularizer )
+    pose      = tf.layers.dense( inputs = shared_feature_dropout , units = 5, kernel_regularizer = regularizer )
 
     landmarks = tf.sigmoid( landmarks )
 
     predictions = {
             "landmarks" : landmarks ,
             "gender" : tf.argmax( input = gender , axis = 1),
-            "gender_probability" : tf.nn.softmax( gender , name = "gender_softmax" ),
+            #"gender_probability" : tf.nn.softmax( gender , name = "gender_softmax" ),
             "smile": tf.argmax( input = smile , axis = 1 ),
-            "smile_probability" : tf.nn.softmax( smile , name = "smile_softmax" ),
+            #"smile_probability" : tf.nn.softmax( smile , name = "smile_softmax" ),
             "glasses": tf.argmax( input = glasses , axis = 1 ),
-            "glasses_probability" : tf.nn.softmax( glasses , name = "glasses_softmax" ),
-            "psoe": tf.argmax( input = pose , axis = 1 ),
-            "pose_probability" : tf.nn.softmax( pose , name = "pose_softmax" )
+            #"glasses_probability" : tf.nn.softmax( glasses , name = "glasses_softmax" ),
+            "pose": tf.argmax( input = pose , axis = 1 ),
+            #"pose_probability" : tf.nn.softmax( pose , name = "pose_softmax" )
             }
 
     if mode == tf.estimator.ModeKeys.PREDICT:
@@ -144,18 +152,22 @@ def model( features, labels, mode, params ):
     loss_glasses  = tf.losses.softmax_cross_entropy( label_glasses_oh , glasses )
     loss_pose     = tf.losses.softmax_cross_entropy( label_pose_oh , pose )
 
-    tf.summary.scalar( "gender loss"   , loss_gender )
-    tf.summary.scalar( "smile loss"    , loss_smile )
-    tf.summary.scalar( "glasses loss"  , loss_glasses )
-    tf.summary.scalar( "pose loss"     , loss_pose )
-    tf.summary.scalar( "landmark loss" , loss_landmark )
+    tf.summary.scalar( "gender_loss"   , loss_gender )
+    tf.summary.scalar( "smile_loss"    , loss_smile )
+    tf.summary.scalar( "glasses_loss"  , loss_glasses )
+    tf.summary.scalar( "pose_loss"     , loss_pose )
+    tf.summary.scalar( "landmark_loss" , loss_landmark )
 
-    total_loss = loss_gender + loss_smile + loss_glasses + loss_pose + loss_landmark * 100.
+    reg_loss = tf.losses.get_regularization_loss()
+
+    tf.summary.scalar( "reg_loss" , reg_loss )
+    #total_loss = loss_gender + loss_smile + loss_glasses + loss_pose + loss_landmark * 100. + 0.01 * reg_loss
+    total_loss = loss_gender +  reg_loss * 0.03
 
     # specify all the configures of Estimator
     if mode == tf.estimator.ModeKeys.TRAIN:
         #optimizer = tf.train.GradientDescentOptimizer(learning_rate=0.00005)
-        optimizer = tf.train.AdamOptimizer( learning_rate= 0.001, \
+        optimizer = tf.train.AdamOptimizer( learning_rate= 0.005, \
                                             beta1 = 0.9 , \
                                             beta2 = 0.99 )
         train_op = optimizer.minimize(
@@ -184,16 +196,17 @@ def model( features, labels, mode, params ):
                  label_pose , predictions = predictions['pose'] )
             }
 
-    tf.summary.scalar("accuracy" , evaluate_metric_op["accuracy_gender"] )
+    #tf.summary.scalar("accuracy" , evaluate_metric_op["accuracy_gender"] )
 
     return tf.estimator.EstimatorSpec(
             mode=mode, loss = total_loss, eval_metric_ops = evaluate_metric_op )
 
 if __name__ == "__main__":
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
     tf.logging.set_verbosity(tf.logging.INFO)
     # make a regressor
     tcdcn_regressor = tf.estimator.Estimator(
-            model_fn = model , model_dir="/tmp/tcdcn_test_model2")
+            model_fn = model , model_dir="/tmp/tcdcn_test_model4")
 
     tensors_to_log = { "heheda" }
     logging_hook = tf.train.LoggingTensorHook(
@@ -214,11 +227,11 @@ if __name__ == "__main__":
     #     hooks = [logging_hook])
 
     train_spec = tf.estimator.TrainSpec( \
-        input_fn = lambda : train_input_fn( "/Users/pitaloveu/working_data/MTFL" , batch_size= 128 ) , \
-        max_steps = 10000 )
+        input_fn = lambda : train_input_fn( "/home/jh/working_data/MTFL" , batch_size= 256 ) , \
+        max_steps = 20000 )
 
     eval_spec = tf.estimator.EvalSpec( \
-        input_fn = lambda : evaluate_input_fn( "/Users/pitaloveu/working_data/MTFL" , batch_size=256 )
-    )
+        input_fn = lambda : evaluate_input_fn( "/home/jh/working_data/MTFL" , batch_size=256 ),\
+        throttle_secs = 10, steps = 200 )
 
     tf.estimator.train_and_evaluate( tcdcn_regressor , train_spec= train_spec , eval_spec=eval_spec )
