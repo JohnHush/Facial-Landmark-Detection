@@ -72,7 +72,7 @@ def evaluate_input_fn( data_prefix, batch_size = 128 ):
 def input_parser( image_path, landmarks, gender, smile, glasses, pose ):
 
     content = tf.read_file( image_path )
-    tf_image = tf.image.decode_jpeg( content , channels = 1 )
+    tf_image = tf.image.decode_jpeg( content , channels = 3 )
 
     # image augmentation using tf image module
     # 
@@ -86,10 +86,10 @@ def input_parser( image_path, landmarks, gender, smile, glasses, pose ):
     transformed_landmarks = tf.concat( [ landmarks[0:5] / width, \
             landmarks[5:10] / height] , -1 )
 
-    tf_image = tf.image.resize_images( tf_image , [ 40, 40 ] )
+    tf_image = tf.image.resize_images( tf_image , [ 112 , 96 ] )
     tf_image = tf_image - 128
     tf_image = tf.scalar_mul( 1./255,  tf_image )
-    tf_image = tf.reshape( tf_image , [ 40 , 40 , 1 ] )
+    tf_image = tf.reshape( tf_image , [ 112 , 96 , 3 ] )
 
     return dict( image = tf_image ) , dict ( landmarks = transformed_landmarks, 
             gender = gender, smile = smile, glasses = glasses, pose = pose )
