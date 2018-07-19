@@ -4,7 +4,11 @@ from tensorflow.contrib.slim.python.slim.learning import train_step
 import fetchData
 
 ckpt_path = '/Users/pitaloveu/working_data/resnet18_tf_checkpoint_from_lilei/try_save/self_save'
+ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
+
+
 data_path = "/Users/pitaloveu/working_data/MTFL"
+data_path = "/home/jh/working_data/MTFL"
 
 def prelu(_x , variable_scope = None ):
     assert variable_scope is not None
@@ -114,7 +118,7 @@ if __name__ == "__main__":
         #v2 = tf.Variable( tf.zeros([3,3,3,64]) , name = "test_v2")
 
         iterator_train = fetchData.train_input_fn( data_path , \
-                batch_size = 64 ).make_one_shot_iterator()
+                batch_size = 256 ).make_one_shot_iterator()
         iterator_test = fetchData.evaluate_input_fn( data_path ).make_one_shot_iterator()
 
         features , labels = iterator_train.get_next()
@@ -246,86 +250,6 @@ if __name__ == "__main__":
                 logdir,
                 number_of_steps = 1000,
                 graph = graph,
-                init_fn = InitAssignFn )
+                init_fn = InitAssignFn,
+                train_step_fn = train_step_fn )
 
-    """
-    graph = tf.Graph()
-
-    with graph.as_default():
-        # import to default graph
-        saver = tf.train.import_meta_graph( \
-                "/Users/pitaloveu/working_data/resnet18_tf_checkpoint_from_lilei/try_save/self_save.meta" )
-
-        checkpoint_path = \
-                "/Users/pitaloveu/working_data/resnet18_tf_checkpoint_from_lilei/try_save/self_save"
-
-#        conv1 = graph.get_tensor_by_name( "convolution:0" )
-#        print ( conv1.shape )
-
-        #variables_to_restore = slim.get_model_variables()
-
-        
-        variables_to_restore = { "conv1_1_bias": slim.get_unique_variable("conv1_ft/biases" )}
-
-        print( variables_to_restore )
-        init_assign_op, init_feed_dict = slim.assign_from_checkpoint(
-                checkpoint_path, variables_to_restore )
-
-        def InitAssignFn(sess):
-            sess.run(init_assign_op, init_feed_dict)
-        
-       
-        # load training data using train_input_fn
-        iterator_train = fetchData.train_input_fn( "/Users/pitaloveu/working_data/MTFL" , batch_size = 256 ).make_one_shot_iterator()
-
-        features , labels = iterator_train.get_next()
-
-        train_images = features['image']
-        label_gender_oh = tf.one_hot( labels['gender'] -1 , depth = 2 , axis = -1 )
-
-        # get input data tensor in the loaded graph
-        #input_data_tensor = graph.get_tensor_by_name( "data:0" )
-        #input_data_tensor = train_images
-
-        # get feature tensor in the loaded graph
-        feature_tensor = graph.get_tensor_by_name( "dense/BiasAdd:0" )
-
-        # get convolutional layer1 tensor in the loaded graph
-        # it's shape is [ ? , 56 , 48 , 3 ]
-        conv1_tensor = graph.get_tensor_by_name( "convolution:0" )
-
-
-        # adding data head to walk around the PlaceHolder problem
-        #with tf.name_scope( "data_head" ) as scope:
-        conv1_tensor = slim.conv2d( train_images , 64 , [3,3] , stride = 2 , scope = "conv1_ft")
-
-        with tf.name_scope( "finetuning" ) as scope:
-            with slim.arg_scope( [slim.fully_connected] ,
-                    weights_initializer = tf.truncated_normal_initializer( stddev=0.1 ),
-                    activation_fn = None ):
-                fc_gender = slim.fully_connected( feature_tensor , 2 , scope = "fc_gender" )
-                loss_gender = tf.losses.softmax_cross_entropy( label_gender_oh , fc_gender )
-
-                optimizer = tf.train.AdamOptimizer( learning_rate = 0.005 )
-                logdir = './slim_tcdcn'
-                train_op = slim.learning.create_train_op( loss_gender , optimizer )
-
-                #variables_to_restore = { "conv1_1_bias:0": slim.get_unique_variable("conv1_ft/biases" )}
-    #            variables_to_restore = slim.get_model_variables()
-                #variables_to_restore =slim.get_variables_to_restore( include=["conv1_2_bias", "conv1_2_weight"] , exclude = ["conv1_ft/biases", "fc_gender", "global_step"])
-
-                #print( variables_to_restore )
-                #init_assign_op, init_feed_dict = slim.assign_from_checkpoint(
-                #        checkpoint_path, variables_to_restore )
-
-                def InitAssignFn(sess):
-                    sess.run(init_assign_op, init_feed_dict)
-
-        slim.learning.train( train_op , 
-                logdir, 
-                number_of_steps = 1000 , 
-                save_interval_secs = 100,
-                graph = graph)
-#                init_fn = InitAssignFn )
-    
-        """ 
