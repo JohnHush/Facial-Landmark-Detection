@@ -4,11 +4,11 @@ from tensorflow.contrib.slim.python.slim.learning import train_step
 import fetchData
 
 ckpt_path = '/Users/pitaloveu/working_data/resnet18_tf_checkpoint_from_lilei/try_save/self_save'
-#ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
+ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
 
 
 data_path = "/Users/pitaloveu/working_data/MTFL"
-#data_path = "/home/jh/working_data/MTFL"
+data_path = "/home/jh/working_data/MTFL"
 
 def prelu(_x , variable_scope = None ):
     assert variable_scope is not None
@@ -106,15 +106,21 @@ def resnet18( input ):
         net = slim.fully_connected( net , 512 , activation_fn = None , scope = "feature" )
 
         # add head for landmark and 4 characteristics
-
+        # frist add one more fully connected layers and  one more activation function
         with slim.arg_scope( [ slim.fully_connected ] , \
-                activation_fn = None ):
-            landmark = slim.fully_connected( net , 10 , scope = "landmark" )
-            gender   = slim.fully_connected( net , 2  , scope = "gender" )
-            smile    = slim.fully_connected( net , 2  , scope = "smile" )
-            glasses  = slim.fully_connected( net , 2  , scope = "glasses" )
-            pose     = slim.fully_connected( net , 5  , scope = "pose" )
-            landmark = tf.sigmoid( landmark )
+                activation_fn = tf.sigmoid ):
+            fc_gender  = slim.fully_connected( net , 100  , scope = "fc_gender" )
+            fc_smile   = slim.fully_connected( net , 100  , scope = "fc_smile" )
+            fc_glasses = slim.fully_connected( net , 100  , scope = "fc_glasses" )
+            fc_pose    = slim.fully_connected( net , 100  , scope = "fc_pose" )
+
+        # then add last layers
+        landmark = slim.fully_connected( net , 10 , scope = "landmark" , \
+                activation_fn = tf.sigmoid )
+        gender   = slim.fully_connected( fc_gender  , 2  , scope = "gender" )
+        smile    = slim.fully_connected( fc_smile   , 2  , scope = "smile" )
+        glasses  = slim.fully_connected( fc_glasses , 2  , scope = "glasses" )
+        pose     = slim.fully_connected( fc_pose    , 5  , scope = "pose" )
 
     return  landmark , gender , smile , glasses , pose
 
@@ -134,7 +140,7 @@ if __name__ == "__main__":
         #v2 = tf.Variable( tf.zeros([3,3,3,64]) , name = "test_v2")
 
         iterator_train = fetchData.train_input_fn( data_path , \
-                batch_size = 256 ).make_one_shot_iterator()
+                batch_size = 128 ).make_one_shot_iterator()
 
         features , labels = iterator_train.get_next()
         
@@ -150,7 +156,8 @@ if __name__ == "__main__":
                     resnet18( features_test['image'] )
 
         # specify variables wanna be trained
-        trainable_layers = [ 'landmark', 'gender','smile', 'glasses', 'pose' ]
+        trainable_layers = [ 'landmark', 'gender','smile', 'glasses', 'pose' , \
+                'fc_gender', 'fc_smile', 'fc_glasses', 'fc_pose' ]
         trainable_list = [ v for v in tf.trainable_variables() if v.name.split('/')[1] \
                 in trainable_layers]
 
@@ -175,7 +182,7 @@ if __name__ == "__main__":
 
             train_op = slim.learning.create_train_op( total_loss, optimizer ,\
                     variables_to_train = trainable_list )
-            logdir = "./finetune_test2"
+            logdir = "./resnet18_finetune"
 
             accuracy_gender = slim.metrics.accuracy( tf.to_int32( tf.argmax( gender_test, 1) ), \
                     tf.to_int32 (labels_test['gender'] -1 ) )
