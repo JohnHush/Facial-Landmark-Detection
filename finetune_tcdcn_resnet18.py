@@ -4,11 +4,11 @@ from tensorflow.contrib.slim.python.slim.learning import train_step
 import fetchData
 
 ckpt_path = '/Users/pitaloveu/working_data/resnet18_tf_checkpoint_from_lilei/try_save/self_save'
-ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
+#ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
 
 
 data_path = "/Users/pitaloveu/working_data/MTFL"
-data_path = "/home/jh/working_data/MTFL"
+#data_path = "/home/jh/working_data/MTFL"
 
 def prelu(_x , variable_scope = None ):
     assert variable_scope is not None
@@ -105,7 +105,18 @@ def resnet18( input ):
         net = slim.flatten( net , scope = "flatten" )
         net = slim.fully_connected( net , 512 , activation_fn = None , scope = "feature" )
 
-    return  net
+        # add head for landmark and 4 characteristics
+
+        with slim.arg_scope( [ slim.fully_connected ] , \
+                activation_fn = None ):
+            landmark = slim.fully_connected( net , 10 , scope = "landmark" )
+            gender   = slim.fully_connected( net , 2  , scope = "gender" )
+            smile    = slim.fully_connected( net , 2  , scope = "smile" )
+            glasses  = slim.fully_connected( net , 2  , scope = "glasses" )
+            pose     = slim.fully_connected( net , 5  , scope = "pose" )
+            landmark = tf.sigmoid( landmark )
+
+    return  landmark , gender , smile , glasses , pose
 
 
 if __name__ == "__main__":
@@ -127,23 +138,52 @@ if __name__ == "__main__":
         # build the whole graph until train_op
 
         with tf.variable_scope( "base" ) as scope:
-            net = resnet18( features['image'] )
-            gender = slim.fully_connected( net , 2 , scope = 'gender' )
+            landmark , gender , smile , glasses , pose = \
+                    resnet18( features['image'] )
+
             scope.reuse_variables()
-            net_test = resnet18( features_test['image'] )
-            gender_test = slim.fully_connected( net_test , 2 , scope = 'gender' )
+
+            landmark_test, gender_test, smile_test, glasses_test, pose_test = \
+                    resnet18( features_test['image'] )
 
         with tf.name_scope( "head" ):
             label_gender_oh = tf.one_hot( labels['gender'] - 1, depth = 2 , axis = -1 )
+            label_smile_oh = tf.one_hot( labels['smile'] -1, depth = 2 , axis = -1 )
+            label_glasses_oh = tf.one_hot( labels['glasses'] -1, depth = 2 , axis = -1 )
+            label_pose_oh = tf.one_hot( labels['pose']-1 , depth = 5 , axis = -1 )
+
+            loss_landmark = tf.losses.mean_squared_error( labels['landmarks'] , landmark )
             loss_gender = tf.losses.softmax_cross_entropy( label_gender_oh , gender )
+            loss_smile    = tf.losses.softmax_cross_entropy( label_smile_oh , smile )
+            loss_glasses  = tf.losses.softmax_cross_entropy( label_glasses_oh , glasses )
+            loss_pose     = tf.losses.softmax_cross_entropy( label_pose_oh , pose )
+
+            total_loss = slim.losses.get_total_loss()
 
             optimizer = tf.train.AdamOptimizer( learning_rate= 0.0001 )
 
-            train_op = slim.learning.create_train_op( loss_gender, optimizer )
-            logdir = "./finetune_shit"
+            train_op = slim.learning.create_train_op( total_loss, optimizer )
+            logdir = "./finetune_test"
 
-            accuracy_test = slim.metrics.accuracy( tf.to_int32( tf.argmax( gender_test, 1) ) , \
+            accuracy_gender = slim.metrics.accuracy( tf.to_int32( tf.argmax( gender_test, 1) ), \
                     tf.to_int32 (labels_test['gender'] -1 ) )
+            accuracy_smile = slim.metrics.accuracy( tf.to_int32( tf.argmax(smile_test, 1) ), \
+                    tf.to_int32 (labels_test['smile'] -1 ) )
+            accuracy_glasses = slim.metrics.accuracy( tf.to_int32(tf.argmax(glasses_test, 1)), \
+                    tf.to_int32 (labels_test['glasses'] -1 ) )
+            accuracy_pose = slim.metrics.accuracy( tf.to_int32( tf.argmax( pose_test, 1) ), \
+                    tf.to_int32 (labels_test['pose'] -1 ) )
+
+            loss_landmark_test = tf.losses.mean_squared_error( labels_test['landmarks'] ,\
+                    landmark_test )
+
+            # add summaries
+
+            tf.summary.scalar( "accuracy_gender" , accuracy_gender )
+            tf.summary.scalar( "accuracy_smile" , accuracy_smile )
+            tf.summary.scalar( "accuracy_glasses" , accuracy_glasses )
+            tf.summary.scalar( "accuracy_pose" , accuracy_pose )
+            tf.summary.scalar( "loss_landmark_test" , loss_landmark_test )
 
         old_name = ['conv1_1_weight', 'conv1_1_bias', 'relu1_1_gamma',\
                     'conv1_2_weight', 'conv1_2_bias', 'relu1_2_gamma',\
@@ -235,15 +275,16 @@ if __name__ == "__main__":
             total_loss, should_stop = train_step(session, *args, **kwargs)
 
             if train_step_fn.step % 100 == 0:
-                accuracy = session.run( train_step_fn.accuracy_test )
-                print('Step %s - Loss: %.2f Accuracy: %.2f%%' % (str(train_step_fn.step).rjust(6, '0' ), total_loss, accuracy * 100))
+                pass
+                #accuracy = session.run( train_step_fn.accuracy_test )
+                #print('Step %s - Loss: %.2f Accuracy: %.2f%%' % (str(train_step_fn.step).rjust(6, '0' ), total_loss, accuracy * 100))
 
             train_step_fn.step += 1
 
             return [total_loss , should_stop ]
 
         train_step_fn.step = 0
-        train_step_fn.accuracy_test = accuracy_test
+        #train_step_fn.accuracy_test = accuracy_test
 
         slim.learning.train(
                 train_op,
@@ -251,5 +292,6 @@ if __name__ == "__main__":
                 number_of_steps = 1000,
                 graph = graph,
                 init_fn = InitAssignFn,
-                train_step_fn = train_step_fn )
+                train_step_fn = train_step_fn,
+                save_summaries_secs = 10 )
 
