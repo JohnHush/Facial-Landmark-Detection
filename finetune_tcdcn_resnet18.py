@@ -4,11 +4,11 @@ from tensorflow.contrib.slim.python.slim.learning import train_step
 import fetchData
 
 ckpt_path = '/Users/pitaloveu/working_data/resnet18_tf_checkpoint_from_lilei/try_save/self_save'
-ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
+#ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
 
 
 data_path = "/Users/pitaloveu/working_data/MTFL"
-data_path = "/home/jh/working_data/MTFL"
+#data_path = "/home/jh/working_data/MTFL"
 
 def prelu(_x , variable_scope = None ):
     assert variable_scope is not None
@@ -149,6 +149,11 @@ if __name__ == "__main__":
             landmark_test, gender_test, smile_test, glasses_test, pose_test = \
                     resnet18( features_test['image'] )
 
+        # specify variables wanna be trained
+        trainable_layers = [ 'landmark', '' ]
+        trainable_list = [ v for v in tf.trainable_variables() if v.name.split('/')[1] \
+                in trainable_layers]
+
         with tf.name_scope( "head" ):
             label_gender_oh = tf.one_hot( labels['gender'] - 1, depth = 2 , axis = -1 )
             label_smile_oh = tf.one_hot( labels['smile'] -1, depth = 2 , axis = -1 )
@@ -166,8 +171,9 @@ if __name__ == "__main__":
 
             optimizer = tf.train.AdamOptimizer( learning_rate= 0.0001 )
 
-            train_op = slim.learning.create_train_op( total_loss, optimizer )
-            logdir = "./finetune_test"
+            train_op = slim.learning.create_train_op( total_loss, optimizer ,\
+                    variables_to_train = trainable_list )
+            logdir = "./finetune_test2"
 
             accuracy_gender = slim.metrics.accuracy( tf.to_int32( tf.argmax( gender_test, 1) ), \
                     tf.to_int32 (labels_test['gender'] -1 ) )
