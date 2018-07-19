@@ -150,9 +150,11 @@ if __name__ == "__main__":
                     resnet18( features_test['image'] )
 
         # specify variables wanna be trained
-        trainable_layers = [ 'landmark', '' ]
+        trainable_layers = [ 'landmark', 'gender','smile', 'glasses', 'pose' ]
         trainable_list = [ v for v in tf.trainable_variables() if v.name.split('/')[1] \
                 in trainable_layers]
+
+        print( trainable_list )
 
         with tf.name_scope( "head" ):
             label_gender_oh = tf.one_hot( labels['gender'] - 1, depth = 2 , axis = -1 )
@@ -166,8 +168,8 @@ if __name__ == "__main__":
             loss_glasses  = tf.losses.softmax_cross_entropy( label_glasses_oh , glasses )
             loss_pose     = tf.losses.softmax_cross_entropy( label_pose_oh , pose )
 
-            #total_loss = slim.losses.get_total_loss()
-            total_loss = loss_landmark
+            total_loss = slim.losses.get_total_loss()
+            #total_loss = loss_landmark
 
             optimizer = tf.train.AdamOptimizer( learning_rate= 0.0001 )
 
