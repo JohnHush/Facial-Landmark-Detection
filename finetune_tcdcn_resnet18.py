@@ -115,13 +115,21 @@ if __name__ == "__main__":
 
         iterator_train = fetchData.train_input_fn( data_path , \
                 batch_size = 64 ).make_one_shot_iterator()
+        iterator_test = fetchData.evaluate_input_fn( data_path ).make_one_shot_iterator()
 
         features , labels = iterator_train.get_next()
+        features_test , labels_test = iterator_test.get_next()
         
         # build the whole graph until train_op
-        net = resnet18( features['image'] )
-        with tf.name_scope( "head" ):
+
+        with tf.variable_scope( "base" ) as scope:
+            net = resnet18( features['image'] )
             gender = slim.fully_connected( net , 2 , scope = 'gender' )
+            scope.reuse_variables()
+            net_test = resnet18( features_test['image'] )
+            gender_test = slim.fully_connected( net_test , 2 , scope = 'gender' )
+
+        with tf.name_scope( "head" ):
             label_gender_oh = tf.one_hot( labels['gender'] - 1, depth = 2 , axis = -1 )
             loss_gender = tf.losses.softmax_cross_entropy( label_gender_oh , gender )
 
@@ -129,6 +137,9 @@ if __name__ == "__main__":
 
             train_op = slim.learning.create_train_op( loss_gender, optimizer )
             logdir = "./finetune_shit"
+
+            accuracy_test = slim.metrics.accuracy( tf.to_int32( tf.argmax( gender_test, 1) ) , \
+                    tf.to_int32 (labels_test['gender'] -1 ) )
 
         old_name = ['conv1_1_weight', 'conv1_1_bias', 'relu1_1_gamma',\
                     'conv1_2_weight', 'conv1_2_bias', 'relu1_2_gamma',\
@@ -205,10 +216,10 @@ if __name__ == "__main__":
                     'conv4_2/weights', 'conv4_2/biases', 'prelu4_2/alpha',\
                     'conv4_3/weights', 'conv4_3/biases', 'prelu4_3/alpha',\
                     'feature/weights', 'feature/biases']
-        ## define dict to map from weights to weight
-        variables_to_restore = dict( zip( old_name , list(map( slim.get_unique_variable , new_name ) ) ) )
 
-        #restorer = tf.train.Saver( variables_to_restore )
+        new_name_base_name = list( map(lambda s: "base/" + s , new_name ) )
+        ## define dict to map from weights to weight
+        variables_to_restore = dict( zip( old_name , list(map( slim.get_unique_variable , new_name_base_name ) ) ) )
 
         init_assign_op, init_feed_dict = slim.assign_from_checkpoint(
                 ckpt_path , variables_to_restore )
@@ -216,11 +227,19 @@ if __name__ == "__main__":
         def InitAssignFn(sess):
             sess.run(init_assign_op, init_feed_dict)
 
-        #with tf.Session() as sess:
-        #    sess.run( tf.global_variables_initializer() )
-        #    restorer.restore( sess , ckpt_path )
-        #    sess.run( net )
-        #    print( net.eval() )
+        def train_step_fn( session , *args , **kwargs ):
+            total_loss, should_stop = train_step(session, *args, **kwargs)
+
+            if train_step_fn.step % 100 == 0:
+                accuracy = session.run( train_step_fn.accuracy_test )
+                print('Step %s - Loss: %.2f Accuracy: %.2f%%' % (str(train_step_fn.step).rjust(6, '0' ), total_loss, accuracy * 100))
+
+            train_step_fn.step += 1
+
+            return [total_loss , should_stop ]
+
+        train_step_fn.step = 0
+        train_step_fn.accuracy_test = accuracy_test
 
         slim.learning.train(
                 train_op,
