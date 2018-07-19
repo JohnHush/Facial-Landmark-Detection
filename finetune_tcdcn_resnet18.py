@@ -4,11 +4,11 @@ from tensorflow.contrib.slim.python.slim.learning import train_step
 import fetchData
 
 ckpt_path = '/Users/pitaloveu/working_data/resnet18_tf_checkpoint_from_lilei/try_save/self_save'
-#ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
+ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
 
 
 data_path = "/Users/pitaloveu/working_data/MTFL"
-#data_path = "/home/jh/working_data/MTFL"
+data_path = "/home/jh/working_data/MTFL"
 
 def prelu(_x , variable_scope = None ):
     assert variable_scope is not None
@@ -123,6 +123,11 @@ if __name__ == "__main__":
     tf.logging.set_verbosity(tf.logging.INFO)
 
     graph = tf.Graph()
+    iterator_test = fetchData.evaluate_input_fn( data_path, 2995 ).make_one_shot_iterator()
+    #features_test , labels_test = iterator_test.get_next()
+
+    with tf.Session() as sess:
+        features_test , labels_test = sess.run( iterator_test.get_next() )
 
     with graph.as_default():
         #v1 = tf.Variable( tf.zeros([64]) , name = "test_v1" )
@@ -130,10 +135,8 @@ if __name__ == "__main__":
 
         iterator_train = fetchData.train_input_fn( data_path , \
                 batch_size = 256 ).make_one_shot_iterator()
-        iterator_test = fetchData.evaluate_input_fn( data_path ).make_one_shot_iterator()
 
         features , labels = iterator_train.get_next()
-        features_test , labels_test = iterator_test.get_next()
         
         # build the whole graph until train_op
 
@@ -158,7 +161,8 @@ if __name__ == "__main__":
             loss_glasses  = tf.losses.softmax_cross_entropy( label_glasses_oh , glasses )
             loss_pose     = tf.losses.softmax_cross_entropy( label_pose_oh , pose )
 
-            total_loss = slim.losses.get_total_loss()
+            #total_loss = slim.losses.get_total_loss()
+            total_loss = loss_landmark
 
             optimizer = tf.train.AdamOptimizer( learning_rate= 0.0001 )
 
@@ -179,6 +183,11 @@ if __name__ == "__main__":
 
             # add summaries
 
+            tf.summary.scalar( "loss_landmark" , loss_landmark )
+            tf.summary.scalar( "loss_gender" , loss_gender )
+            tf.summary.scalar( "loss_smile" , loss_smile )
+            tf.summary.scalar( "loss_glasses" , loss_glasses )
+            tf.summary.scalar( "loss_pose" , loss_pose )
             tf.summary.scalar( "accuracy_gender" , accuracy_gender )
             tf.summary.scalar( "accuracy_smile" , accuracy_smile )
             tf.summary.scalar( "accuracy_glasses" , accuracy_glasses )
@@ -274,8 +283,8 @@ if __name__ == "__main__":
         def train_step_fn( session , *args , **kwargs ):
             total_loss, should_stop = train_step(session, *args, **kwargs)
 
-            if train_step_fn.step % 100 == 0:
-                pass
+            #if train_step_fn.step % 100 == 0:
+            #    pass
                 #accuracy = session.run( train_step_fn.accuracy_test )
                 #print('Step %s - Loss: %.2f Accuracy: %.2f%%' % (str(train_step_fn.step).rjust(6, '0' ), total_loss, accuracy * 100))
 
@@ -289,7 +298,7 @@ if __name__ == "__main__":
         slim.learning.train(
                 train_op,
                 logdir,
-                number_of_steps = 1000,
+                number_of_steps = 10000,
                 graph = graph,
                 init_fn = InitAssignFn,
                 train_step_fn = train_step_fn,
