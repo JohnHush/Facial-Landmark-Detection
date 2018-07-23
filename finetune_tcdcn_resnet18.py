@@ -101,82 +101,46 @@ def resnet18( input ):
         net = net + net_copy
 
         # add fc layer
-
         net = slim.flatten( net , scope = "flatten" )
         net = slim.fully_connected( net , 512 , activation_fn = None , scope = "feature" )
 
-        # add head for landmark and 4 characteristics
-        # frist add one more fully connected layers and  one more activation function
-        with slim.arg_scope( [ slim.fully_connected ] , \
-                activation_fn = tf.sigmoid ):
-            fc_gender  = slim.fully_connected( net , 100  , scope = "fc_gender" )
-            fc_smile   = slim.fully_connected( net , 100  , scope = "fc_smile" )
-            fc_glasses = slim.fully_connected( net , 100  , scope = "fc_glasses" )
-            fc_pose    = slim.fully_connected( net , 100  , scope = "fc_pose" )
-
-        # then add last layers
+        # add head for landmark predicting
+        # recently ignore all auxiliary characters predicting
         landmark = slim.fully_connected( net , 10 , scope = "landmark" , \
                 activation_fn = tf.sigmoid )
-        gender   = slim.fully_connected( fc_gender  , 2  , scope = "gender" )
-        smile    = slim.fully_connected( fc_smile   , 2  , scope = "smile" )
-        glasses  = slim.fully_connected( fc_glasses , 2  , scope = "glasses" )
-        pose     = slim.fully_connected( fc_pose    , 5  , scope = "pose" )
 
-    return  landmark , gender , smile , glasses , pose
-
+    return  landmark
 
 if __name__ == "__main__":
     tf.logging.set_verbosity(tf.logging.INFO)
 
     graph = tf.Graph()
     iterator_test = fetchData.evaluate_input_fn( data_path, 2995 ).make_one_shot_iterator()
-    #features_test , labels_test = iterator_test.get_next()
 
     with tf.Session() as sess:
         features_test , labels_test = sess.run( iterator_test.get_next() )
 
     with graph.as_default():
-        #v1 = tf.Variable( tf.zeros([64]) , name = "test_v1" )
-        #v2 = tf.Variable( tf.zeros([3,3,3,64]) , name = "test_v2")
 
         iterator_train = fetchData.train_input_fn( data_path , \
                 batch_size = 128 ).make_one_shot_iterator()
 
         features , labels = iterator_train.get_next()
         
-        # build the whole graph until train_op
-
+        # build the whole graph till train_op
         with tf.variable_scope( "base" ) as scope:
-            landmark , gender , smile , glasses , pose = \
-                    resnet18( features['image'] )
-
+            landmark = resnet18( features['image'] )
             scope.reuse_variables()
-
-            landmark_test, gender_test, smile_test, glasses_test, pose_test = \
-                    resnet18( features_test['image'] )
+            landmark_test = resnet18( features_test['image'] )
 
         # specify variables wanna be trained
-        trainable_layers = [ 'landmark', 'gender','smile', 'glasses', 'pose' , \
-                'fc_gender', 'fc_smile', 'fc_glasses', 'fc_pose' ]
+        trainable_layers = [ 'landmark' ]
         trainable_list = [ v for v in tf.trainable_variables() if v.name.split('/')[1] \
                 in trainable_layers]
 
-        print( trainable_list )
-
         with tf.name_scope( "head" ):
-            label_gender_oh = tf.one_hot( labels['gender'] - 1, depth = 2 , axis = -1 )
-            label_smile_oh = tf.one_hot( labels['smile'] -1, depth = 2 , axis = -1 )
-            label_glasses_oh = tf.one_hot( labels['glasses'] -1, depth = 2 , axis = -1 )
-            label_pose_oh = tf.one_hot( labels['pose']-1 , depth = 5 , axis = -1 )
-
             loss_landmark = tf.losses.mean_squared_error( labels['landmarks'] , landmark )
-            loss_gender = tf.losses.softmax_cross_entropy( label_gender_oh , gender )
-            loss_smile    = tf.losses.softmax_cross_entropy( label_smile_oh , smile )
-            loss_glasses  = tf.losses.softmax_cross_entropy( label_glasses_oh , glasses )
-            loss_pose     = tf.losses.softmax_cross_entropy( label_pose_oh , pose )
-
             total_loss = slim.losses.get_total_loss()
-            #total_loss = loss_landmark
 
             optimizer = tf.train.AdamOptimizer( learning_rate= 0.0001 )
 
@@ -184,29 +148,11 @@ if __name__ == "__main__":
                     variables_to_train = trainable_list )
             logdir = "./resnet18_finetune"
 
-            accuracy_gender = slim.metrics.accuracy( tf.to_int32( tf.argmax( gender_test, 1) ), \
-                    tf.to_int32 (labels_test['gender'] -1 ) )
-            accuracy_smile = slim.metrics.accuracy( tf.to_int32( tf.argmax(smile_test, 1) ), \
-                    tf.to_int32 (labels_test['smile'] -1 ) )
-            accuracy_glasses = slim.metrics.accuracy( tf.to_int32(tf.argmax(glasses_test, 1)), \
-                    tf.to_int32 (labels_test['glasses'] -1 ) )
-            accuracy_pose = slim.metrics.accuracy( tf.to_int32( tf.argmax( pose_test, 1) ), \
-                    tf.to_int32 (labels_test['pose'] -1 ) )
-
             loss_landmark_test = tf.losses.mean_squared_error( labels_test['landmarks'] ,\
                     landmark_test )
 
             # add summaries
-
             tf.summary.scalar( "loss_landmark" , loss_landmark )
-            tf.summary.scalar( "loss_gender" , loss_gender )
-            tf.summary.scalar( "loss_smile" , loss_smile )
-            tf.summary.scalar( "loss_glasses" , loss_glasses )
-            tf.summary.scalar( "loss_pose" , loss_pose )
-            tf.summary.scalar( "accuracy_gender" , accuracy_gender )
-            tf.summary.scalar( "accuracy_smile" , accuracy_smile )
-            tf.summary.scalar( "accuracy_glasses" , accuracy_glasses )
-            tf.summary.scalar( "accuracy_pose" , accuracy_pose )
             tf.summary.scalar( "loss_landmark_test" , loss_landmark_test )
 
         old_name = ['conv1_1_weight', 'conv1_1_bias', 'relu1_1_gamma',\
