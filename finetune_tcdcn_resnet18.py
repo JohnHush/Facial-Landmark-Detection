@@ -10,6 +10,25 @@ ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
 data_path = "/Users/pitaloveu/working_data/MTFL"
 data_path = "/home/jh/working_data/MTFL"
 
+def my_accuracy( labels, \
+        predictions , \
+        weights = None, \
+        metrics_collections=None, \
+        updates_collections=None, \
+        name = None ):
+    """
+    this metric is specially for landmarks in face detection
+    """
+    from tensorflow.python.ops import math_ops
+    
+    absolute_errors = math_ops.abs( predictions , labels )
+    mean_t , update_op = tf.metrics.mean( absolute_errors , metrics_collections = \
+            metrics_collections , updates_collections = updates_collections , \
+            name = "my_accuracy" )
+
+    return mean_t , update_op
+    
+
 def prelu(_x , variable_scope = None ):
     assert variable_scope is not None
 
@@ -123,7 +142,7 @@ if __name__ == "__main__":
     with graph.as_default():
 
         iterator_train = fetchData.train_input_fn( data_path , \
-                batch_size = 128 ).make_one_shot_iterator()
+                batch_size = 256 ).make_one_shot_iterator()
 
         features , labels = iterator_train.get_next()
         
@@ -150,6 +169,9 @@ if __name__ == "__main__":
 
             loss_landmark_test = tf.losses.mean_squared_error( labels_test['landmarks'] ,\
                     landmark_test )
+
+            accuracy_test = my_accuracy( labels_test['landmarks'][: , 0 ], 
+                    landmark_test[:,0] )
 
             # add summaries
             tf.summary.scalar( "loss_landmark" , loss_landmark )
@@ -244,17 +266,16 @@ if __name__ == "__main__":
         def train_step_fn( session , *args , **kwargs ):
             total_loss, should_stop = train_step(session, *args, **kwargs)
 
-            #if train_step_fn.step % 100 == 0:
-            #    pass
-                #accuracy = session.run( train_step_fn.accuracy_test )
-                #print('Step %s - Loss: %.2f Accuracy: %.2f%%' % (str(train_step_fn.step).rjust(6, '0' ), total_loss, accuracy * 100))
+            if train_step_fn.step % 100 == 0:
+                accuracy = session.run( train_step_fn.accuracy_test )
+                print('Step %s - Loss: %.2f Accuracy: %.2f%%' % (str(train_step_fn.step).rjust(6, '0' ), total_loss, accuracy * 100))
 
             train_step_fn.step += 1
 
             return [total_loss , should_stop ]
 
         train_step_fn.step = 0
-        #train_step_fn.accuracy_test = accuracy_test
+        train_step_fn.accuracy_test = accuracy_test
 
         slim.learning.train(
                 train_op,
