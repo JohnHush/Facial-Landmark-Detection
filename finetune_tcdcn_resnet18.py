@@ -21,7 +21,7 @@ def my_accuracy( labels, \
     """
     from tensorflow.python.ops import math_ops
     
-    absolute_errors = math_ops.abs( predictions , labels )
+    absolute_errors = math_ops.abs( predictions - labels )
     mean_t , update_op = tf.metrics.mean( absolute_errors , metrics_collections = \
             metrics_collections , updates_collections = updates_collections , \
             name = "my_accuracy" )
@@ -128,7 +128,11 @@ def resnet18( input ):
         landmark = slim.fully_connected( net , 10 , scope = "landmark" , \
                 activation_fn = tf.sigmoid )
 
-    return  landmark
+        # test
+
+        pose = sim.fully_connected( net , 5 , scope = "pose" )
+
+    return  landmark , pose
 
 if __name__ == "__main__":
     tf.logging.set_verbosity(tf.logging.INFO)
@@ -148,12 +152,12 @@ if __name__ == "__main__":
         
         # build the whole graph till train_op
         with tf.variable_scope( "base" ) as scope:
-            landmark = resnet18( features['image'] )
+            landmark , _ = resnet18( features['image'] )
             scope.reuse_variables()
-            landmark_test = resnet18( features_test['image'] )
+            landmark_test , pose_test = resnet18( features_test['image'] )
 
         # specify variables wanna be trained
-        trainable_layers = [ 'landmark' ]
+        trainable_layers = [ 'landmark' , 'pose' ]
         trainable_list = [ v for v in tf.trainable_variables() if v.name.split('/')[1] \
                 in trainable_layers]
 
@@ -170,8 +174,10 @@ if __name__ == "__main__":
             loss_landmark_test = tf.losses.mean_squared_error( labels_test['landmarks'] ,\
                     landmark_test )
 
-            accuracy_test = my_accuracy( labels_test['landmarks'][: , 0 ], 
-                    landmark_test[:,0] )
+            #accuracy_test = my_accuracy( labels_test['landmarks'][: , 0 ], 
+            #        landmark_test[:,0] )
+            accuracy_test = tf.metrics.accuracy(  \
+                    tf.to_int32( tf.argmax(pose_test , 1) ) , labels_test['pose'] -1 )
 
             # add summaries
             tf.summary.scalar( "loss_landmark" , loss_landmark )
@@ -266,7 +272,7 @@ if __name__ == "__main__":
         def train_step_fn( session , *args , **kwargs ):
             total_loss, should_stop = train_step(session, *args, **kwargs)
 
-            if train_step_fn.step % 100 == 0:
+            if train_step_fn.step % 10 == 0:
                 accuracy = session.run( train_step_fn.accuracy_test )
                 print('Step %s - Loss: %.2f Accuracy: %.2f%%' % (str(train_step_fn.step).rjust(6, '0' ), total_loss, accuracy * 100))
 
