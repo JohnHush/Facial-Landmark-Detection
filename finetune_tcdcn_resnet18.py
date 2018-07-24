@@ -130,7 +130,7 @@ def resnet18( input ):
 
         # test
 
-        pose = sim.fully_connected( net , 5 , scope = "pose" )
+        pose = slim.fully_connected( net , 5 , scope = "pose" )
 
     return  landmark , pose
 
@@ -157,18 +157,26 @@ if __name__ == "__main__":
             landmark_test , pose_test = resnet18( features_test['image'] )
 
         # specify variables wanna be trained
-        trainable_layers = [ 'landmark' , 'pose' ]
+        trainable_layers = [ 'landmark' , 'pose' , 'feature'  ]
         trainable_list = [ v for v in tf.trainable_variables() if v.name.split('/')[1] \
                 in trainable_layers]
+
+        gradient_multipliers = { 
+                'base/feature/weights' : 0.01,
+                'base/feature/biases' : 0.01 }
+
+        print( trainable_list )
 
         with tf.name_scope( "head" ):
             loss_landmark = tf.losses.mean_squared_error( labels['landmarks'] , landmark )
             total_loss = slim.losses.get_total_loss()
 
-            optimizer = tf.train.AdamOptimizer( learning_rate= 0.0001 )
+            optimizer = tf.train.AdamOptimizer( learning_rate= 0.0003 )
 
             train_op = slim.learning.create_train_op( total_loss, optimizer ,\
-                    variables_to_train = trainable_list )
+                    variables_to_train = trainable_list,\
+                    gradient_multipliers = gradient_multipliers )
+
             logdir = "./resnet18_finetune"
 
             loss_landmark_test = tf.losses.mean_squared_error( labels_test['landmarks'] ,\
@@ -176,8 +184,9 @@ if __name__ == "__main__":
 
             #accuracy_test = my_accuracy( labels_test['landmarks'][: , 0 ], 
             #        landmark_test[:,0] )
-            accuracy_test = tf.metrics.accuracy(  \
-                    tf.to_int32( tf.argmax(pose_test , 1) ) , labels_test['pose'] -1 )
+            accuracy_test = slim.metrics.accuracy(  \
+                    tf.to_int32( tf.argmax(pose_test , 1) ) , \
+                    tf.to_int32(tf.convert_to_tensor (labels_test['pose'] -1 )))
 
             # add summaries
             tf.summary.scalar( "loss_landmark" , loss_landmark )
@@ -272,7 +281,7 @@ if __name__ == "__main__":
         def train_step_fn( session , *args , **kwargs ):
             total_loss, should_stop = train_step(session, *args, **kwargs)
 
-            if train_step_fn.step % 10 == 0:
+            if train_step_fn.step % 100 == 0:
                 accuracy = session.run( train_step_fn.accuracy_test )
                 print('Step %s - Loss: %.2f Accuracy: %.2f%%' % (str(train_step_fn.step).rjust(6, '0' ), total_loss, accuracy * 100))
 
@@ -286,7 +295,7 @@ if __name__ == "__main__":
         slim.learning.train(
                 train_op,
                 logdir,
-                number_of_steps = 10000,
+                number_of_steps = 20000,
                 graph = graph,
                 init_fn = InitAssignFn,
                 train_step_fn = train_step_fn,
