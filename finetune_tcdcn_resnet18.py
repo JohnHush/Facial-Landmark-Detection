@@ -4,11 +4,11 @@ from tensorflow.contrib.slim.python.slim.learning import train_step
 import fetchData
 
 ckpt_path = '/Users/pitaloveu/working_data/resnet18_tf_checkpoint_from_lilei/try_save/self_save'
-ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
+#ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
 
 
 data_path = "/Users/pitaloveu/working_data/MTFL"
-data_path = "/home/jh/working_data/MTFL"
+#data_path = "/home/jh/working_data/MTFL"
 
 def my_accuracy( labels, \
         predictions , \
@@ -137,6 +137,10 @@ def resnet18( input ):
 if __name__ == "__main__":
     tf.logging.set_verbosity(tf.logging.INFO)
 
+    # before that import all training and testing data as numpy arrays
+    train_imgs , train_landmarks , train_gender , train_smile , train_glasses , train_pose = \
+            fetchData.fetch_numpy_arrays( data_path , is_train = True )
+
     graph = tf.Graph()
     iterator_test = fetchData.evaluate_input_fn( data_path, 2995 ).make_one_shot_iterator()
 
@@ -144,12 +148,20 @@ if __name__ == "__main__":
         features_test , labels_test = sess.run( iterator_test.get_next() )
 
     with graph.as_default():
+        # add data placeholder for training
+        training_imgs_placeholder = tf.placeholder( train_imgs.dtype , train_imgs.shape )
+        training_dataset = fetchData.train_input_fn_v2( training_imgs_placeholder ,\
+                train_landmarks , train_gender , train_smile , train_glasses , \
+                train_pose , batch_size = 128 )
 
-        iterator_train = fetchData.train_input_fn( data_path , \
-                batch_size = 256 ).make_one_shot_iterator()
+        training_init_iterator  = training_dataset.make_initializable_iterator()
+        #training_fetch_iterator = training_dataset.make_one_shot_iterator()
+        #features , labels = training_fetch_iterator.get_next()
+        features , labels = training_init_iterator.get_next()
 
-        features , labels = iterator_train.get_next()
-        
+        init_op = training_init_iterator.initializer
+        init_feed_dicts = { training_imgs_placeholder : train_imgs }
+
         # build the whole graph till train_op
         with tf.variable_scope( "base" ) as scope:
             landmark , _ = resnet18( features['image'] )
@@ -165,7 +177,7 @@ if __name__ == "__main__":
                 'base/feature/weights' : 0.01,
                 'base/feature/biases' : 0.01 }
 
-        print( trainable_list )
+        #print( trainable_list )
 
         with tf.name_scope( "head" ):
             loss_landmark = tf.losses.mean_squared_error( labels['landmarks'] , landmark )
@@ -177,7 +189,7 @@ if __name__ == "__main__":
                     variables_to_train = trainable_list,\
                     gradient_multipliers = gradient_multipliers )
 
-            logdir = "./resnet18_finetune"
+            logdir = "./resnet18_finetune2"
 
             loss_landmark_test = tf.losses.mean_squared_error( labels_test['landmarks'] ,\
                     landmark_test )
@@ -276,6 +288,7 @@ if __name__ == "__main__":
                 ckpt_path , variables_to_restore )
 
         def InitAssignFn(sess):
+            sess.run(init_op, init_feed_dicts )
             sess.run(init_assign_op, init_feed_dict)
 
         def train_step_fn( session , *args , **kwargs ):
