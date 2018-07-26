@@ -4,11 +4,24 @@ from tensorflow.contrib.slim.python.slim.learning import train_step
 import fetchData
 
 ckpt_path = '/Users/pitaloveu/working_data/resnet18_tf_checkpoint_from_lilei/try_save/self_save'
-#ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
-
+ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
 
 data_path = "/Users/pitaloveu/working_data/MTFL"
-#data_path = "/home/jh/working_data/MTFL"
+data_path = "/home/jh/working_data/MTFL"
+
+def left_eye_accuracy( landmark_label , landmark_predict ):
+    landmark_label = tf.to_float( landmark_label )
+    landmark_predict = tf.to_float( landmark_predict )
+    left_eye_label_x = landmark_label[ : , 0 ]
+    left_eye_label_y = landmark_label[ : , 5 ]
+
+    left_eye_predi_x = landmark_predict[ : , 0 ]
+    left_eye_predi_y = landmark_predict[ : , 5 ]
+
+    error = tf.sqrt( tf.square( left_eye_label_x - left_eye_predi_x ) * 96. * 96. + \
+            tf.square( left_eye_label_y - left_eye_predi_y ) * 112. * 112. )
+
+    return tf.reduce_mean( error )
 
 def my_accuracy( labels, \
         predictions , \
@@ -152,7 +165,7 @@ if __name__ == "__main__":
         training_imgs_placeholder = tf.placeholder( train_imgs.dtype , train_imgs.shape )
         training_dataset = fetchData.train_input_fn_v2( training_imgs_placeholder ,\
                 train_landmarks , train_gender , train_smile , train_glasses , \
-                train_pose , batch_size = 128 )
+                train_pose , batch_size = 256 )
 
         training_init_iterator  = training_dataset.make_initializable_iterator()
         #training_fetch_iterator = training_dataset.make_one_shot_iterator()
@@ -189,16 +202,14 @@ if __name__ == "__main__":
                     variables_to_train = trainable_list,\
                     gradient_multipliers = gradient_multipliers )
 
-            logdir = "./resnet18_finetune2"
+            logdir = "./resnet18_finetune1"
 
             loss_landmark_test = tf.losses.mean_squared_error( labels_test['landmarks'] ,\
                     landmark_test )
 
             #accuracy_test = my_accuracy( labels_test['landmarks'][: , 0 ], 
             #        landmark_test[:,0] )
-            accuracy_test = slim.metrics.accuracy(  \
-                    tf.to_int32( tf.argmax(pose_test , 1) ) , \
-                    tf.to_int32(tf.convert_to_tensor (labels_test['pose'] -1 )))
+            accuracy_test = left_eye_accuracy( labels['landmarks'] , landmark )
 
             # add summaries
             tf.summary.scalar( "loss_landmark" , loss_landmark )
@@ -296,7 +307,7 @@ if __name__ == "__main__":
 
             if train_step_fn.step % 100 == 0:
                 accuracy = session.run( train_step_fn.accuracy_test )
-                print('Step %s - Loss: %.2f Accuracy: %.2f%%' % (str(train_step_fn.step).rjust(6, '0' ), total_loss, accuracy * 100))
+                print('Step %s - Loss: %.2f Accuracy: %.2f' % (str(train_step_fn.step).rjust(6, '0' ), total_loss, accuracy ))
 
             train_step_fn.step += 1
 
