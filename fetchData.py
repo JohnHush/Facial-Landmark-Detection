@@ -3,12 +3,25 @@ import tensorflow as tf
 import numpy as np
 import os.path as op
 import matplotlib.pyplot as plt
+from functools import reduce
 
 class args( object ):
     pass
 
 args.RESIZE_SIZE = 48
 args.data_path = "/Users/pitaloveu/working_data/MTFL"
+
+def write_resized_test_img( data_path , output_dir = "resized" ):
+    image_path , landmarks, gender, smile, glasses, pose = \
+            load_path( data_path , if_train = False )
+
+    imgs = list( map( lambda s: cv2.imread( s ) , image_path ) )
+    imgs_resized = list( map ( lambda s: cv2.resize( s , ( 96 , 112 ) ) , imgs ) )
+
+    imgs_resized_path = list( map( lambda s: s.replace( 'AFLW', output_dir, 1 ) , image_path ) )
+
+    for img , path in list( zip( imgs_resized , imgs_resized_path ) ):
+        cv2.imwrite( path , img )
 
 def load_path( data_prefix , if_train = True ):
     # in the train file, 
@@ -96,6 +109,9 @@ def input_parser( image_path, landmarks, gender, smile, glasses, pose ):
 
 if __name__ == "__main__":
 
+    write_resized_test_img( args.data_path , output_dir = "resized" )
+
+    """
     iterator = train_eval_input_fn( args.data_path , batch_size = 8 ).make_one_shot_iterator()
     next_element = iterator.get_next()
 
@@ -125,3 +141,4 @@ if __name__ == "__main__":
             fig = plt.figure()
             plt.imshow( test )
             plt.show()
+    """
