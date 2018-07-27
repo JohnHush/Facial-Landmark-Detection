@@ -53,7 +53,7 @@ def prelu(_x , variable_scope = None ):
 
     return pos + neg
 
-def resnet18( input ):
+def resnet18( input , is_training ):
     """
     directly implement the network from Lilei's resnet arch
     """
@@ -132,14 +132,17 @@ def resnet18( input ):
         net = prelu( net , 'prelu4_3' )
         net = net + net_copy
 
+        regularizer = slim.l2_regularizer( 0. )
         # add fc layer
         net = slim.flatten( net , scope = "flatten" )
         net = slim.fully_connected( net , 512 , activation_fn = None , scope = "feature" )
 
+        net = tf.layers.dropout( net , rate = 0.01 , training = is_training, \
+                name = "dropout" )
         # add head for landmark predicting
         # recently ignore all auxiliary characters predicting
         landmark = slim.fully_connected( net , 10 , scope = "landmark" , \
-                activation_fn = tf.sigmoid )
+                activation_fn = tf.sigmoid , weights_regularizer = regularizer )
 
         # test
 
@@ -177,12 +180,12 @@ if __name__ == "__main__":
 
         # build the whole graph till train_op
         with tf.variable_scope( "base" ) as scope:
-            landmark , _ = resnet18( features['image'] )
+            landmark , _ = resnet18( features['image'] , True )
             scope.reuse_variables()
-            landmark_test , pose_test = resnet18( features_test['image'] )
+            landmark_test , pose_test = resnet18( features_test['image'] , False)
 
         # specify variables wanna be trained
-        trainable_layers = [ 'landmark' , 'pose' , 'feature'  ]
+        trainable_layers = [ 'landmark' , 'feature' ]
         trainable_list = [ v for v in tf.trainable_variables() if v.name.split('/')[1] \
                 in trainable_layers]
 
@@ -196,7 +199,7 @@ if __name__ == "__main__":
             loss_landmark = tf.losses.mean_squared_error( labels['landmarks'] , landmark )
             total_loss = slim.losses.get_total_loss()
 
-            optimizer = tf.train.AdamOptimizer( learning_rate= 0.0003 )
+            optimizer = tf.train.AdamOptimizer( learning_rate= 0.00005 )
 
             train_op = slim.learning.create_train_op( total_loss, optimizer ,\
                     variables_to_train = trainable_list,\
