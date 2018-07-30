@@ -5,10 +5,10 @@ import fetchData
 import os
 
 ckpt_path = '/Users/pitaloveu/working_data/resnet18_tf_checkpoint_from_lilei/try_save/self_save'
-#ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
+ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
 
 data_path = "/Users/pitaloveu/working_data/MTFL"
-#data_path = "/home/jh/working_data/MTFL"
+data_path = "/home/jh/working_data/MTFL"
 
 def pixel_deviation( x1 , y1 , x2 , y2 ):
     """
@@ -186,7 +186,7 @@ def resnet18( input , is_training ):
         net = slim.flatten( net , scope = "flatten" )
         net = slim.fully_connected( net , 512 , activation_fn = None , scope = "feature" )
 
-        net = tf.layers.dropout( net , rate = 0.01 , training = is_training, \
+        net = tf.layers.dropout( net , rate = 0. , training = is_training, \
                 name = "dropout" )
         # add head for landmark predicting
         # recently ignore all auxiliary characters predicting
@@ -214,7 +214,7 @@ if __name__ == "__main__":
         training_imgs_placeholder = tf.placeholder( train_imgs.dtype , train_imgs.shape )
         training_dataset = fetchData.train_input_fn_v2( training_imgs_placeholder ,\
                 train_landmarks , train_gender , train_smile , train_glasses , \
-                train_pose , batch_size = 32 )
+                train_pose , batch_size = 256 )
 
         training_init_iterator  = training_dataset.make_initializable_iterator()
         #training_fetch_iterator = training_dataset.make_one_shot_iterator()
@@ -231,7 +231,7 @@ if __name__ == "__main__":
             landmark_test = resnet18( features_test['image'] , False)
 
         # specify variables wanna be trained
-        trainable_layers = [ 'landmark' , 'feature' ]
+        trainable_layers = [ 'landmark' ]
         trainable_list = [ v for v in tf.trainable_variables() if v.name.split('/')[1] \
                 in trainable_layers]
 
@@ -245,7 +245,7 @@ if __name__ == "__main__":
             loss_landmark = tf.losses.mean_squared_error( labels['landmarks'] , landmark )
             total_loss = slim.losses.get_total_loss()
 
-            optimizer = tf.train.AdamOptimizer( learning_rate= 0.00005 )
+            optimizer = tf.train.AdamOptimizer( learning_rate= 0.0001 )
 
             train_op = slim.learning.create_train_op( total_loss, optimizer ,\
                     variables_to_train = trainable_list,\
@@ -256,8 +256,6 @@ if __name__ == "__main__":
             loss_landmark_test = tf.losses.mean_squared_error( labels_test['landmarks'] ,\
                     landmark_test )
 
-            #accuracy_test = my_accuracy( labels_test['landmarks'][: , 0 ], 
-            #        landmark_test[:,0] )
             left_eye_deviation = left_eye_deviation( labels['landmarks'] , landmark )
             right_eye_deviation = right_eye_deviation( labels['landmarks'] , landmark )
             nose_deviation = nose_deviation( labels['landmarks'] , landmark )
