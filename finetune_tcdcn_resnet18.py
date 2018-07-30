@@ -4,10 +4,24 @@ from tensorflow.contrib.slim.python.slim.learning import train_step
 import fetchData
 
 ckpt_path = '/Users/pitaloveu/working_data/resnet18_tf_checkpoint_from_lilei/try_save/self_save'
-#ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
+ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
 
 data_path = "/Users/pitaloveu/working_data/MTFL"
-#data_path = "/home/jh/working_data/MTFL"
+data_path = "/home/jh/working_data/MTFL"
+
+def left_eye_accuracy( landmark_label , landmark_predict ):
+    landmark_label = tf.to_float( landmark_label )
+    landmark_predict = tf.to_float( landmark_predict )
+    left_eye_label_x = landmark_label[ : , 0 ]
+    left_eye_label_y = landmark_label[ : , 5 ]
+
+    left_eye_predi_x = landmark_predict[ : , 0 ]
+    left_eye_predi_y = landmark_predict[ : , 5 ]
+
+    error = tf.sqrt( tf.square( left_eye_label_x - left_eye_predi_x ) * 96. * 96. + \
+            tf.square( left_eye_label_y - left_eye_predi_y ) * 112. * 112. )
+
+    return tf.reduce_mean( error )
 
 def left_eye_accuracy( landmark_label , landmark_predict ):
     landmark_label = tf.to_float( landmark_label )
@@ -53,7 +67,7 @@ def prelu(_x , variable_scope = None ):
 
     return pos + neg
 
-def resnet18( input ):
+def resnet18( input , is_training ):
     """
     directly implement the network from Lilei's resnet arch
     """
@@ -132,14 +146,17 @@ def resnet18( input ):
         net = prelu( net , 'prelu4_3' )
         net = net + net_copy
 
+        regularizer = slim.l2_regularizer( 0. )
         # add fc layer
         net = slim.flatten( net , scope = "flatten" )
         net = slim.fully_connected( net , 512 , activation_fn = None , scope = "feature" )
 
+        net = tf.layers.dropout( net , rate = 0.01 , training = is_training, \
+                name = "dropout" )
         # add head for landmark predicting
         # recently ignore all auxiliary characters predicting
         landmark = slim.fully_connected( net , 10 , scope = "landmark" , \
-                activation_fn = tf.sigmoid )
+                activation_fn = tf.sigmoid , weights_regularizer = regularizer )
 
         # test
 
@@ -150,6 +167,10 @@ def resnet18( input ):
 if __name__ == "__main__":
     tf.logging.set_verbosity(tf.logging.INFO)
 
+    # before that import all training and testing data as numpy arrays
+    train_imgs , train_landmarks , train_gender , train_smile , train_glasses , train_pose = \
+            fetchData.fetch_numpy_arrays( data_path , is_train = True )
+
     graph = tf.Graph()
     iterator_test = fetchData.evaluate_input_fn( data_path, 2995 ).make_one_shot_iterator()
 
@@ -157,20 +178,28 @@ if __name__ == "__main__":
         features_test , labels_test = sess.run( iterator_test.get_next() )
 
     with graph.as_default():
+        # add data placeholder for training
+        training_imgs_placeholder = tf.placeholder( train_imgs.dtype , train_imgs.shape )
+        training_dataset = fetchData.train_input_fn_v2( training_imgs_placeholder ,\
+                train_landmarks , train_gender , train_smile , train_glasses , \
+                train_pose , batch_size = 256 )
 
-        iterator_train = fetchData.train_input_fn( data_path , \
-                batch_size = 64 ).make_one_shot_iterator()
+        training_init_iterator  = training_dataset.make_initializable_iterator()
+        #training_fetch_iterator = training_dataset.make_one_shot_iterator()
+        #features , labels = training_fetch_iterator.get_next()
+        features , labels = training_init_iterator.get_next()
 
-        features , labels = iterator_train.get_next()
-        
+        init_op = training_init_iterator.initializer
+        init_feed_dicts = { training_imgs_placeholder : train_imgs }
+
         # build the whole graph till train_op
         with tf.variable_scope( "base" ) as scope:
-            landmark , _ = resnet18( features['image'] )
+            landmark , _ = resnet18( features['image'] , True )
             scope.reuse_variables()
-            landmark_test , pose_test = resnet18( features_test['image'] )
+            landmark_test , pose_test = resnet18( features_test['image'] , False)
 
         # specify variables wanna be trained
-        trainable_layers = [ 'landmark' , 'pose' , 'feature'  ]
+        trainable_layers = [ 'landmark' , 'feature' ]
         trainable_list = [ v for v in tf.trainable_variables() if v.name.split('/')[1] \
                 in trainable_layers]
 
@@ -178,13 +207,13 @@ if __name__ == "__main__":
                 'base/feature/weights' : 0.01,
                 'base/feature/biases' : 0.01 }
 
-        print( trainable_list )
+        #print( trainable_list )
 
         with tf.name_scope( "head" ):
             loss_landmark = tf.losses.mean_squared_error( labels['landmarks'] , landmark )
             total_loss = slim.losses.get_total_loss()
 
-            optimizer = tf.train.AdamOptimizer( learning_rate= 0.0003 )
+            optimizer = tf.train.AdamOptimizer( learning_rate= 0.00005 )
 
             train_op = slim.learning.create_train_op( total_loss, optimizer ,\
                     variables_to_train = trainable_list,\
@@ -287,6 +316,7 @@ if __name__ == "__main__":
                 ckpt_path , variables_to_restore )
 
         def InitAssignFn(sess):
+            sess.run(init_op, init_feed_dicts )
             sess.run(init_assign_op, init_feed_dict)
 
         def train_step_fn( session , *args , **kwargs ):
@@ -294,7 +324,7 @@ if __name__ == "__main__":
 
             if train_step_fn.step % 100 == 0:
                 accuracy = session.run( train_step_fn.accuracy_test )
-                print('Step %s - Loss: %.2f Accuracy: %.2f%%' % (str(train_step_fn.step).rjust(6, '0' ), total_loss, accuracy * 100))
+                print('Step %s - Loss: %.2f Accuracy: %.2f' % (str(train_step_fn.step).rjust(6, '0' ), total_loss, accuracy ))
 
             train_step_fn.step += 1
 
