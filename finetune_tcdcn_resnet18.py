@@ -2,50 +2,84 @@ import tensorflow as tf
 import tensorflow.contrib.slim as slim
 from tensorflow.contrib.slim.python.slim.learning import train_step
 import fetchData
+import os
 
 ckpt_path = '/Users/pitaloveu/working_data/resnet18_tf_checkpoint_from_lilei/try_save/self_save'
-ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
+#ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
 
 data_path = "/Users/pitaloveu/working_data/MTFL"
-data_path = "/home/jh/working_data/MTFL"
+#data_path = "/home/jh/working_data/MTFL"
 
-def left_eye_accuracy( landmark_label , landmark_predict ):
-    landmark_label = tf.to_float( landmark_label )
-    landmark_predict = tf.to_float( landmark_predict )
-    left_eye_label_x = landmark_label[ : , 0 ]
-    left_eye_label_y = landmark_label[ : , 5 ]
+def pixel_deviation( x1 , y1 , x2 , y2 ):
+    """
+    calculate the mean deviation of two pts with ( x1, y1 ) and ( x2, y2)
+    are the coordinates of them, respectively.
 
-    left_eye_predi_x = landmark_predict[ : , 0 ]
-    left_eye_predi_y = landmark_predict[ : , 5 ]
+    the deviation is represented with Eucleadian distance of pts
 
-    error = tf.sqrt( tf.square( left_eye_label_x - left_eye_predi_x ) * 96. * 96. + \
-            tf.square( left_eye_label_y - left_eye_predi_y ) * 112. * 112. )
+    the values of the arguments will be in the range of [0 , 1]
+    """
+    x1 = tf.to_float( x1 )
+    y1 = tf.to_float( y1 )
+    x2 = tf.to_float( x2 )
+    y2 = tf.to_float( y2 )
 
-    return tf.reduce_mean( error )
-
-def left_eye_accuracy( landmark_label , landmark_predict ):
-    landmark_label = tf.to_float( landmark_label )
-    landmark_predict = tf.to_float( landmark_predict )
-    left_eye_label_x = landmark_label[ : , 0 ]
-    left_eye_label_y = landmark_label[ : , 5 ]
-
-    left_eye_predi_x = landmark_predict[ : , 0 ]
-    left_eye_predi_y = landmark_predict[ : , 5 ]
-
-    error = tf.sqrt( tf.square( left_eye_label_x - left_eye_predi_x ) * 96. * 96. + \
-            tf.square( left_eye_label_y - left_eye_predi_y ) * 112. * 112. )
+    error = tf.sqrt( tf.square( x1 - x2 ) * 96 * 96 + tf.square( y1 - y2 ) * 112 * 112 )
 
     return tf.reduce_mean( error )
 
+def left_eye_deviation( landmark_label , landmark_predict ):
+    x1 = landmark_label[ : , 0 ]
+    y1 = landmark_label[ : , 5 ]
+
+    x2 = landmark_predict[ : , 0 ]
+    y2 = landmark_predict[ : , 5 ]
+
+    return pixel_deviation( x1 , y1 , x2 , y2 )
+
+def right_eye_deviation( landmark_label , landmark_predict ):
+    x1 = landmark_label[ : , 1 ]
+    y1 = landmark_label[ : , 6 ]
+
+    x2 = landmark_predict[ : , 1 ]
+    y2 = landmark_predict[ : , 6 ]
+
+    return pixel_deviation( x1 , y1 , x2 , y2 )
+
+def nose_deviation( landmark_label , landmark_predict ):
+    x1 = landmark_label[ : , 2 ]
+    y1 = landmark_label[ : , 7 ]
+
+    x2 = landmark_predict[ : , 2 ]
+    y2 = landmark_predict[ : , 7 ]
+
+    return pixel_deviation( x1 , y1 , x2 , y2 )
+
+def left_mouth_deviation( landmark_label , landmark_predict ):
+    x1 = landmark_label[ : , 3 ]
+    y1 = landmark_label[ : , 8 ]
+
+    x2 = landmark_predict[ : , 3 ]
+    y2 = landmark_predict[ : , 8 ]
+
+    return pixel_deviation( x1 , y1 , x2 , y2 )
+
+def right_mouth_deviation( landmark_label , landmark_predict ):
+    x1 = landmark_label[ : , 4 ]
+    y1 = landmark_label[ : , 9 ]
+
+    x2 = landmark_predict[ : , 4 ]
+    y2 = landmark_predict[ : , 9 ]
+
+    return pixel_deviation( x1 , y1 , x2 , y2 )
+
+"""
 def my_accuracy( labels, \
         predictions , \
         weights = None, \
         metrics_collections=None, \
         updates_collections=None, \
         name = None ):
-    """
-    this metric is specially for landmarks in face detection
-    """
     from tensorflow.python.ops import math_ops
     
     absolute_errors = math_ops.abs( predictions - labels )
@@ -54,6 +88,7 @@ def my_accuracy( labels, \
             name = "my_accuracy" )
 
     return mean_t , update_op
+"""
     
 
 def prelu(_x , variable_scope = None ):
@@ -158,14 +193,11 @@ def resnet18( input , is_training ):
         landmark = slim.fully_connected( net , 10 , scope = "landmark" , \
                 activation_fn = tf.sigmoid , weights_regularizer = regularizer )
 
-        # test
-
-        pose = slim.fully_connected( net , 5 , scope = "pose" )
-
-    return  landmark , pose
+    return  landmark
 
 if __name__ == "__main__":
     tf.logging.set_verbosity(tf.logging.INFO)
+    os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 
     # before that import all training and testing data as numpy arrays
     train_imgs , train_landmarks , train_gender , train_smile , train_glasses , train_pose = \
@@ -182,7 +214,7 @@ if __name__ == "__main__":
         training_imgs_placeholder = tf.placeholder( train_imgs.dtype , train_imgs.shape )
         training_dataset = fetchData.train_input_fn_v2( training_imgs_placeholder ,\
                 train_landmarks , train_gender , train_smile , train_glasses , \
-                train_pose , batch_size = 256 )
+                train_pose , batch_size = 32 )
 
         training_init_iterator  = training_dataset.make_initializable_iterator()
         #training_fetch_iterator = training_dataset.make_one_shot_iterator()
@@ -194,9 +226,9 @@ if __name__ == "__main__":
 
         # build the whole graph till train_op
         with tf.variable_scope( "base" ) as scope:
-            landmark , _ = resnet18( features['image'] , True )
+            landmark = resnet18( features['image'] , True )
             scope.reuse_variables()
-            landmark_test , pose_test = resnet18( features_test['image'] , False)
+            landmark_test = resnet18( features_test['image'] , False)
 
         # specify variables wanna be trained
         trainable_layers = [ 'landmark' , 'feature' ]
@@ -226,11 +258,20 @@ if __name__ == "__main__":
 
             #accuracy_test = my_accuracy( labels_test['landmarks'][: , 0 ], 
             #        landmark_test[:,0] )
-            accuracy_test = left_eye_accuracy( labels['landmarks'] , landmark )
+            left_eye_deviation = left_eye_deviation( labels['landmarks'] , landmark )
+            right_eye_deviation = right_eye_deviation( labels['landmarks'] , landmark )
+            nose_deviation = nose_deviation( labels['landmarks'] , landmark )
+            left_mouth_deviation = left_mouth_deviation( labels['landmarks'] , landmark )
+            right_mouth_deviation = right_mouth_deviation( labels['landmarks'] , landmark )
 
             # add summaries
             tf.summary.scalar( "loss_landmark" , loss_landmark )
             tf.summary.scalar( "loss_landmark_test" , loss_landmark_test )
+            tf.summary.scalar( "left_eye_deviation" , left_eye_deviation )
+            tf.summary.scalar( "right_eye_deviation" , right_eye_deviation )
+            tf.summary.scalar( "nose_deviation" , nose_deviation )
+            tf.summary.scalar( "left_mouth_deviation" , left_mouth_deviation )
+            tf.summary.scalar( "right_mouth_deviation" , right_mouth_deviation )
 
         old_name = ['conv1_1_weight', 'conv1_1_bias', 'relu1_1_gamma',\
                     'conv1_2_weight', 'conv1_2_bias', 'relu1_2_gamma',\
@@ -323,15 +364,27 @@ if __name__ == "__main__":
             total_loss, should_stop = train_step(session, *args, **kwargs)
 
             if train_step_fn.step % 100 == 0:
-                accuracy = session.run( train_step_fn.accuracy_test )
-                print('Step %s - Loss: %.2f Accuracy: %.2f' % (str(train_step_fn.step).rjust(6, '0' ), total_loss, accuracy ))
+                left_eye_deviation = session.run( train_step_fn.led )
+                right_eye_deviation = session.run( train_step_fn.red )
+                nose_deviation = session.run( train_step_fn.nd )
+                left_mouth_deviation = session.run( train_step_fn.lmd )
+                right_mouth_deviation = session.run( train_step_fn.rmd )
+                print('Step %s - Loss: %.2f left eye deviation: %.2f' % (str(train_step_fn.step).rjust(6, '0' ), total_loss, left_eye_deviation ))
+                print('Step %s - Loss: %.2f right eye deviation: %.2f' % (str(train_step_fn.step).rjust(6, '0' ), total_loss, right_eye_deviation ))
+                print('Step %s - Loss: %.2f nose deviation: %.2f' % (str(train_step_fn.step).rjust(6, '0' ), total_loss, nose_deviation ))
+                print('Step %s - Loss: %.2f left mouth deviation: %.2f' % (str(train_step_fn.step).rjust(6, '0' ), total_loss, left_mouth_deviation ))
+                print('Step %s - Loss: %.2f right mouth deviation: %.2f' % (str(train_step_fn.step).rjust(6, '0' ), total_loss, right_mouth_deviation ))
 
             train_step_fn.step += 1
 
             return [total_loss , should_stop ]
 
         train_step_fn.step = 0
-        train_step_fn.accuracy_test = accuracy_test
+        train_step_fn.led = left_eye_deviation
+        train_step_fn.red = right_eye_deviation
+        train_step_fn.nd = nose_deviation
+        train_step_fn.lmd = left_mouth_deviation
+        train_step_fn.rmd = right_mouth_deviation
 
         slim.learning.train(
                 train_op,
