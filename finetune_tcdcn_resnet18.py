@@ -186,7 +186,7 @@ def resnet18( input , is_training ):
         net = slim.flatten( net , scope = "flatten" )
         net = slim.fully_connected( net , 512 , activation_fn = None , scope = "feature" )
 
-        net = tf.layers.dropout( net , rate = 0. , training = is_training, \
+        net = tf.layers.dropout( net , rate = 0.1 , training = is_training, \
                 name = "dropout" )
         # add head for landmark predicting
         # recently ignore all auxiliary characters predicting
@@ -231,7 +231,7 @@ if __name__ == "__main__":
             landmark_test = resnet18( features_test['image'] , False)
 
         # specify variables wanna be trained
-        trainable_layers = [ 'landmark' ]
+        trainable_layers = [ 'landmark' , 'feature' ]
         trainable_list = [ v for v in tf.trainable_variables() if v.name.split('/')[1] \
                 in trainable_layers]
 
@@ -243,7 +243,8 @@ if __name__ == "__main__":
 
         with tf.name_scope( "head" ):
             loss_landmark = tf.losses.mean_squared_error( labels['landmarks'] , landmark )
-            total_loss = slim.losses.get_total_loss()
+            total_loss = loss_landmark
+            #total_loss = slim.losses.get_total_loss()
 
             optimizer = tf.train.AdamOptimizer( learning_rate= 0.0001 )
 
@@ -256,11 +257,11 @@ if __name__ == "__main__":
             loss_landmark_test = tf.losses.mean_squared_error( labels_test['landmarks'] ,\
                     landmark_test )
 
-            left_eye_deviation = left_eye_deviation( labels['landmarks'] , landmark )
-            right_eye_deviation = right_eye_deviation( labels['landmarks'] , landmark )
-            nose_deviation = nose_deviation( labels['landmarks'] , landmark )
-            left_mouth_deviation = left_mouth_deviation( labels['landmarks'] , landmark )
-            right_mouth_deviation = right_mouth_deviation( labels['landmarks'] , landmark )
+            left_eye_deviation = left_eye_deviation( labels_test['landmarks'] , landmark_test )
+            right_eye_deviation = right_eye_deviation( labels_test['landmarks'] , landmark_test )
+            nose_deviation = nose_deviation( labels_test['landmarks'] , landmark_test )
+            left_mouth_deviation = left_mouth_deviation( labels_test['landmarks'] , landmark_test )
+            right_mouth_deviation = right_mouth_deviation( labels_test['landmarks'] , landmark_test )
 
             # add summaries
             tf.summary.scalar( "loss_landmark" , loss_landmark )
