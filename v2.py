@@ -6,6 +6,8 @@ import os
 import numpy as np
 
 ckpt_path = '/Users/pitaloveu/working_data/resnet18_tf_checkpoint_from_lilei/try_save/self_save'
+
+
 #ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
 
 data_path = "/Users/pitaloveu/working_data/MTFL"
@@ -88,132 +90,127 @@ def prelu(_x , variable_scope = None ):
 if __name__ == "__main__":
     tf.logging.set_verbosity(tf.logging.INFO)
     os.environ["CUDA_VISIBLE_DEVICES"] = '1'
-   
+    
+    # i suppose tf.Session is more intuitive
+    sess = tf.Session()
+  
+    iterator_test = fetchData.evaluate_input_fn( data_path, 2995 ).make_one_shot_iterator()
+    iterator_train = fetchData.train_input_fn( data_path , 128 ).make_one_shot_iterator()
+
+    test_data_ops = iterator_test.get_next()
+    train_data_ops = iterator_train.get_next()
+    saver = tf.train.import_meta_graph( ckpt_path + '.meta')
+
+    features_test , labels_test = sess.run( test_data_ops )
+
+    graph = tf.get_default_graph()
+
+    input = graph.get_tensor_by_name( 'data:0' )
+    label_placeholder = tf.placeholder( tf.float32 , [None, 10] )
+
+    feature = graph.get_tensor_by_name( 'dense/BiasAdd:0' )
+
+
+    with tf.variable_scope( 'landmark' ) as scope:
+        landmark = slim.fully_connected( feature , 10 , \
+            activation_fn = tf.sigmoid , scope = scope )
+        scope.reuse_variables()
+        landmark_test = slim.fully_connected( \
+                feature , 10 , activation_fn = tf.sigmoid ,\
+                scope = scope )
+
+    loss_landmark = tf.losses.mean_squared_error( \
+            label_placeholder , landmark )
+
+    loss_landmark_test = tf.losses.mean_squared_error( \
+            label_placeholder , landmark_test )
+
+    tf.summary.scalar( "loss_landmark" , loss_landmark_test )
+
+    train_op = tf.train.AdamOptimizer( learning_rate = \
+            0.0001 ).minimize( loss_landmark )
+
+    tf.summary.scalar( "loss_landmark" , loss_landmark )
+
+    merged = tf.summary.merge_all()
+
+    train_writer = tf.summary.FileWriter( './tflog/train', sess.graph)
+    test_writer = tf.summary.FileWriter( './tflog/test' )
+
+    sess.run( tf.global_variables_initializer() )
+    for i in range( 2000 ):
+        features_train, labels_train = sess.run( train_data_ops ) 
+        _ , loss , summary = sess.run(\
+                [ train_op , loss_landmark , \
+                merged ],\
+                feed_dict = { input: features_train['image'] , \
+                label_placeholder : labels_train['landmarks'] }
+                )
+
+        train_writer.add_summary( summary , i )
+
+        if i% 10 == 0:
+            loss, summary = sess.run( \
+                    [ loss_landmark_test , merged ], \
+                    feed_dict = { input : features_test['image'], \
+                    label_placeholder : labels_test['landmarks'] }
+                    )
+            test_writer.add_summary( summary , i )
+            print( "training loss equals to : %f" % loss  )
+
+    train_writer.close()
+    test_writer.close()
+
+"""
     graph = tf.Graph()
     with graph.as_default():
+        iterator_train = fetchData.train_input_fn( data_path , 128 ).make_one_shot_iterator()
+        features_train_batch , labels_train_batch = iterator_train.get_next()
         saver = tf.train.import_meta_graph( ckpt_path + '.meta')
         with tf.Session() as sess:
-            saver.restore( sess , ckpt_path )
-            
+            writer = tf.summary.FileWriter( './new_graph_input' )
+
             feature = graph.get_tensor_by_name( 'dense/BiasAdd:0' )
+
+            # input is a placeholder for image
             input = graph.get_tensor_by_name( 'data:0' )
+            label_placeholder = tf.placeholder( tf.float32 , [None, 10] )
 
-            print( feature.shape )
-            print( input.shape )
+            # build the header
+            landmark = slim.fully_connected( feature , 10 , scope = "landmark" , activation_fn = tf.sigmoid )
+            loss_landmark = tf.losses.mean_squared_error( label_placeholder , landmark )
 
-    """
-    # before that import all training and testing data as numpy arrays
-    train_imgs , train_landmarks , train_gender , train_smile , train_glasses , train_pose = \
-            fetchData.fetch_numpy_arrays( data_path , is_train = True )
+            tf.summary.scalar( 'loss_landmark' , loss_landmark )
 
-    graph = tf.Graph()
-    iterator_test = fetchData.evaluate_input_fn( data_path, 2995 ).make_one_shot_iterator()
 
-    with tf.Session() as sess:
-        features_test , labels_test = sess.run( iterator_test.get_next() )
+            trainable_layers = [ 'landmark' ]
+            trainable_list = [ v for v in tf.trainable_variables() if v.name.split('/')[0] \
+                    in trainable_layers ]
 
-    with graph.as_default():
-        # add data placeholder for training
-        training_imgs_placeholder = tf.placeholder( train_imgs.dtype , train_imgs.shape )
-        training_dataset = fetchData.train_input_fn_v2( training_imgs_placeholder ,\
-                train_landmarks , train_gender , train_smile , train_glasses , \
-                train_pose , batch_size = 256 )
+            train_op = tf.train.AdamOptimizer( learning_rate= 0.0001 ).minimize( loss_landmark , \
+                    var_list = trainable_list )
 
-        training_init_iterator  = training_dataset.make_initializable_iterator()
-        #training_fetch_iterator = training_dataset.make_one_shot_iterator()
-        #features , labels = training_fetch_iterator.get_next()
-        features , labels = training_init_iterator.get_next()
+            writer.add_graph( sess.graph )
+            
+            
+            with tf.name_scope( "test_phase" ):
+                landmark_test = slim.fully_connected( feature , 10 , scope = "landmark" , activation_fn = tf.sigmoid )
+                loss_landmark_test = tf.losses.mean_squared_error( labels_test['landmarks'] , landmark_test )
+                tf.summary.scalar( 'loss_landmark_test' , loss_landmark_test )
+            
 
-        init_op = training_init_iterator.initializer
-        init_feed_dicts = { training_imgs_placeholder : train_imgs }
+            sess.run( tf.global_variables_initializer() )
+            saver.restore( sess , ckpt_path )
+            merged_summary_op = tf.summary.merge_all()
+            for i in range(20000):
+                features_train, labels_train = sess.run( [features_train_batch, labels_train_batch ] )
+                _ , loss , summary = sess.run( [ train_op , loss_landmark , merged_summary_op ] , \
+                        feed_dict = { input: features_train['image'] , \
+                        label_placeholder : labels_train['landmarks'] } )
 
-        # build the whole graph till train_op
-        with tf.variable_scope( "base" ) as scope:
-            landmark = resnet18( features['image'] , True )
-            scope.reuse_variables()
-            landmark_test = resnet18( features_test['image'] , False)
+                writer.add_summary( summary , i )
 
-        # specify variables wanna be trained
-        trainable_layers = [ 'landmark' , 'feature' ]
-        trainable_list = [ v for v in tf.trainable_variables() if v.name.split('/')[1] \
-                in trainable_layers]
+                if i% 10 == 0:
+                    print( "training loss equals to : %f" % loss  )
 
-        gradient_multipliers = { 
-                'base/feature/weights' : 0.01,
-                'base/feature/biases' : 0.01 }
-
-        #print( trainable_list )
-
-        with tf.name_scope( "head" ):
-            loss_landmark = tf.losses.mean_squared_error( labels['landmarks'] , landmark )
-            total_loss = loss_landmark
-            #total_loss = slim.losses.get_total_loss()
-
-            optimizer = tf.train.AdamOptimizer( learning_rate= 0.0001 )
-
-            train_op = slim.learning.create_train_op( total_loss, optimizer ,\
-                    variables_to_train = trainable_list,\
-                    gradient_multipliers = gradient_multipliers )
-
-            logdir = "./resnet18_finetune1"
-
-            loss_landmark_test = tf.losses.mean_squared_error( labels_test['landmarks'] ,\
-                    landmark_test )
-
-            left_eye_deviation = left_eye_deviation( labels_test['landmarks'] , landmark_test )
-            right_eye_deviation = right_eye_deviation( labels_test['landmarks'] , landmark_test )
-            nose_deviation = nose_deviation( labels_test['landmarks'] , landmark_test )
-            left_mouth_deviation = left_mouth_deviation( labels_test['landmarks'] , landmark_test )
-            right_mouth_deviation = right_mouth_deviation( labels_test['landmarks'] , landmark_test )
-
-            # add summaries
-            tf.summary.scalar( "loss_landmark" , loss_landmark )
-            tf.summary.scalar( "loss_landmark_test" , loss_landmark_test )
-            tf.summary.scalar( "left_eye_deviation" , left_eye_deviation )
-            tf.summary.scalar( "right_eye_deviation" , right_eye_deviation )
-            tf.summary.scalar( "nose_deviation" , nose_deviation )
-            tf.summary.scalar( "left_mouth_deviation" , left_mouth_deviation )
-            tf.summary.scalar( "right_mouth_deviation" , right_mouth_deviation )
-
-        new_name_base_name = list( map(lambda s: "base/" + s , new_name ) )
-        ## define dict to map from weights to weight
-        variables_to_restore = dict( zip( old_name , list(map( slim.get_unique_variable , new_name_base_name ) ) ) )
-
-        init_assign_op, init_feed_dict = slim.assign_from_checkpoint(
-                ckpt_path , variables_to_restore )
-
-        def InitAssignFn(sess):
-            sess.run(init_op, init_feed_dicts )
-            sess.run(init_assign_op, init_feed_dict)
-
-        def train_step_fn( session , *args , **kwargs ):
-            total_loss, should_stop = train_step(session, *args, **kwargs)
-
-            if train_step_fn.step % 100 == 0:
-                left_eye_deviation = session.run( train_step_fn.led )
-                right_eye_deviation = session.run( train_step_fn.red )
-                nose_deviation = session.run( train_step_fn.nd )
-                left_mouth_deviation = session.run( train_step_fn.lmd )
-                right_mouth_deviation = session.run( train_step_fn.rmd )
-
-            train_step_fn.step += 1
-
-            return [total_loss , should_stop ]
-
-        train_step_fn.step = 0
-        train_step_fn.led = left_eye_deviation
-        train_step_fn.red = right_eye_deviation
-        train_step_fn.nd = nose_deviation
-        train_step_fn.lmd = left_mouth_deviation
-        train_step_fn.rmd = right_mouth_deviation
-
-        slim.learning.train(
-                train_op,
-                logdir,
-                number_of_steps = 20000,
-                graph = graph,
-                init_fn = InitAssignFn,
-                train_step_fn = train_step_fn,
-                save_summaries_secs = 10 )
-    """
-
+"""
