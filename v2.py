@@ -6,8 +6,6 @@ import os
 import numpy as np
 
 ckpt_path = '/Users/pitaloveu/working_data/resnet18_tf_checkpoint_from_lilei/try_save/self_save'
-
-
 #ckpt_path = '/home/jh/working_data/resnet18_face_lilei/try_save/self_save'
 
 data_path = "/Users/pitaloveu/working_data/MTFL"
@@ -110,27 +108,27 @@ if __name__ == "__main__":
 
     feature = graph.get_tensor_by_name( 'dense/BiasAdd:0' )
 
-
-    with tf.variable_scope( 'landmark' ) as scope:
-        landmark = slim.fully_connected( feature , 10 , \
-            activation_fn = tf.sigmoid , scope = scope )
-        scope.reuse_variables()
-        landmark_test = slim.fully_connected( \
-                feature , 10 , activation_fn = tf.sigmoid ,\
-                scope = scope )
+    landmark = slim.fully_connected( feature , 10 , \
+            activation_fn = tf.sigmoid , scope = 'landmark' )
 
     loss_landmark = tf.losses.mean_squared_error( \
             label_placeholder , landmark )
+    tf.summary.scalar( "loss_landmark" , loss_landmark )
 
-    loss_landmark_test = tf.losses.mean_squared_error( \
-            label_placeholder , landmark_test )
+    left_IDev = left_eye_deviation( label_placeholder , landmark )
+    right_IDev = right_eye_deviation( label_placeholder , landmark )
+    nose_Dev = nose_deviation( label_placeholder , landmark )
+    left_MDev = left_mouth_deviation( label_placeholder , landmark )
+    right_MDev = right_mouth_deviation( label_placeholder , landmark )
 
-    tf.summary.scalar( "loss_landmark" , loss_landmark_test )
+    tf.summary.scalar( "left_I_Dev" , left_IDev )
+    tf.summary.scalar( "right_I_Dev" , right_IDev )
+    tf.summary.scalar( "nose_Dev" , nose_Dev )
+    tf.summary.scalar( "left_Mouth_Dev" , left_MDev )
+    tf.summary.scalar( "right_Mouth_Dev" , right_MDev )
 
     train_op = tf.train.AdamOptimizer( learning_rate = \
             0.0001 ).minimize( loss_landmark )
-
-    tf.summary.scalar( "loss_landmark" , loss_landmark )
 
     merged = tf.summary.merge_all()
 
@@ -151,7 +149,7 @@ if __name__ == "__main__":
 
         if i% 10 == 0:
             loss, summary = sess.run( \
-                    [ loss_landmark_test , merged ], \
+                    [ loss_landmark , merged ], \
                     feed_dict = { input : features_test['image'], \
                     label_placeholder : labels_test['landmarks'] }
                     )
