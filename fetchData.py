@@ -28,40 +28,47 @@ class MSCELEB( object ):
         self._height = 112
         self._width = 96
 
-        _prepareEverything( anno_path , data_dir )
+        self._prepareEverything( anno_path , data_dir )
     def _prepareEverything( self , anno_path , data_dir ):
         # read info from annotation file
-        anno_info = np.genfromtxt( anno_path, delimiter=" ", unpack=True, \
-                dtype= 'str')
-        if not _try_fetchIMG( anno_info ):
+        #anno_info = np.genfromtxt( anno_path, delimiter=" ", unpack=True, \
+        #        dtype= 'str')
+        with open( anno_path , 'r' ) as fo:
+            try_fetch = fo.readline().strip()
+            split_list = try_fetch.split( ' ' )
+
+        if not self._try_fetchIMG( split_list[0] ):
             print( "the dataset could not be loaded!" )
             return
 
-        self._num_images = len( anno_info[0] )
-        if _if_split:
-            self._num_train_images = _train_ratio * _num_images
-            self._num_test_images  = _num_images - _num_train_images
+        self._num_images = self._lines_num( anno_path )
+        if self._if_split:
+            self._num_train_images = int( self._train_ratio * self._num_images )
+            self._num_test_images  = int( self._num_images - self._num_train_images )
 
-    def _try_fetchIMG( self , anno_info ):
+    def _lines_num( self , file ):
+        count = 0
+        with open( file , 'r' ) as fi:
+            while True:
+                buffer = fi.read( 1024 * 8092 )
+                if not buffer:
+                    break
+                count += buffer.count( '\n' )
+        return count
+
+    def _try_fetchIMG( self , try_fetch_path ):
         """
         in initialization, we make some test in fetching
         """
-        img_path = anno_info[0]
-        try_num = min( 5 , len( anno_info[0] ) )
-        
-        for _ in range( try_num ):
-            try_index = np.random.randint( 0 , len( anno_info[0] ) -1 )
-            try_path = os.path.join( self._data_dir , anno_info[0][try_index] )
-            img = cv2.imread( try_path )
-
-            if img == None:
-                print( "the img %s doesn't exist" % try_path )
-                return False
+        try_path = os.path.join( self._data_dir , try_fetch_path )
+        img = cv2.imread( try_path )
+        if img is None:
+            return False
         return True
 
     def dataStream( self , batch_size , if_shuffle = True ):
         dataset = tf.data.TextLineDataset( anno_path )
-        dataset = dataset.map( _parser )
+        dataset = dataset.map( self._parser )
         if if_shuffle:
             dataset = dataset.shuffle( 10 * batch_size )
         dataset = dataset.repeat().prefetch( 10 * batch_size )
@@ -71,8 +78,8 @@ class MSCELEB( object ):
 
     def trainDataStream( self , batch_size , if_shuffle = True ):
         dataset = tf.data.TextLineDataset( anno_path )
-        dataset = dataset.take( _num_train_images )
-        dataset = dataset.map( _parser )
+        dataset = dataset.take( self._num_train_images )
+        dataset = dataset.map( self._parser )
         if if_shuffle:
             dataset = dataset.shuffle( 10 * batch_size )
         dataset = dataset.repeat().prefetch( 10 * batch_size )
@@ -82,41 +89,42 @@ class MSCELEB( object ):
 
     def testDataStream( self , batch_size ):
         dataset = tf.data.TextLineDataset( anno_path )
-        dataset = dataset.skip( _num_train_images )
-        dataset = dataset.map( _parser )
+        dataset = dataset.skip( self._num_train_images )
+        dataset = dataset.map( self._parser )
         dataset = dataset.prefetch( 10 * batch_size )
         dataset = dataset.batch( batch_size )
 
         return dataset
     
-    def _parser( line ):
+    def _parser( self , line ):
         """
         data line in landmark file in a form:
             data_path ID_number x1 y1 x2 y2 x3 y3 x4 y4 x5 y5
         """
         FIELD_DEFAULT = [ ['IMG_PATH'] , [0], [0.], [0.], [0.], [0.]\
                 , [0.], [0.], [0.], [0.], [0.], [0.] ]
-        fields = tf.decode_csv( line , FIELD_DEFAULT )
-        content = tf.read_file( _data_dir + '/' + fields[0] )
+        fields = tf.decode_csv( line , FIELD_DEFAULT , field_delim = ' ' )
+        content = tf.read_file( self._data_dir + '/' + fields[0] )
 
         # transfer the landmark into 
         # x1, x2, x3, x4, x5, y1, y2, y3, y4, y5 format
-        landmarks = tf.concat( fields[2], fields[4], fields[6], fields[8]\
+        landmarks = tf.stack( [ fields[2], fields[4], fields[6], fields[8]\
                 , fields[10], fields[3], fields[5], fields[7], fields[9], \
-                fields[11] )
+                fields[11] ] , axis = -1  )
+        landmarks = tf.to_float( landmarks )
         tf_image = tf.image.decode_jpeg( content , channels = 3 )
 
         # scale the landmarks in the range 0 to 1
-        height = tf.to_double( tf.shape( tf_image )[0] )
-        width  = tf.to_double( tf.shape( tf_image )[1] )
+        height = tf.to_float( tf.shape( tf_image )[0] )
+        width  = tf.to_float( tf.shape( tf_image )[1] )
 
         transformed_landmarks = tf.concat( [ landmarks[0:5] / width, \
                 landmarks[5:10] / height] , -1 )
 
-        tf_image = tf.image.resize_images( tf_image , [ _height , _width ] )
-        tf_image = tf_image - 128
+        tf_image = tf.image.resize_images( tf_image , [ self._height , self._width ] )
+        #tf_image = tf_image - 128
         tf_image = tf.scalar_mul( 1./255,  tf_image )
-        tf_image = tf.reshape( tf_image , [ _height, _width , 3 ] )
+        tf_image = tf.reshape( tf_image , [ self._height, self._width , 3 ] )
 
         # recently not need to return a dict
         # i don't use Estimator here
@@ -293,12 +301,17 @@ def input_parser( image_path, landmarks, gender, smile, glasses, pose ):
 
 if __name__ == "__main__":
     sess = tf.InteractiveSession()
-
+    
+    anno_path = '/home/public/data/celebrity_lmk'
+    data_dir = '/home/public/data'
     ms_data = MSCELEB( anno_path , data_dir )
-    iterator = ms_data.dataStream( batch_size = 32 )
-    imgs , landmarks = iterator.get_next().run()
+    iterator = ms_data.trainDataStream( batch_size = 10 ).make_one_shot_iterator()
+    imgs , landmarks =  sess.run( iterator.get_next() )
 
     print( landmarks )
+    for i in range( len( imgs ) ):
+        cv2.imshow( "" , imgs[i] )
+        cv2.waitKey()
     """
     iterator = train_eval_input_fn( args.data_path , batch_size = 8 ).make_one_shot_iterator()
     next_element = iterator.get_next()
