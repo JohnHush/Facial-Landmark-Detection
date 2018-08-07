@@ -2,9 +2,127 @@ import cv2
 import tensorflow as tf
 import numpy as np
 import os.path as op
+import os
 import matplotlib.pyplot as plt
 from functools import reduce
 
+class MSCELEB( object ):
+    """
+    coorperate with tf.TextLineDataset to build the input graph
+
+    meanwhile, several helper function will be added,
+        such as: 
+        try fetch the image to see the dataset could be loaded or not
+        try to illustrate the img to see how it distributes
+
+        or partition the dataset to train and test
+        or just use it as train dataset
+    """
+    def __init__( self, anno_path , data_dir , \
+            if_split = True , \
+            train_ratio = 0.9 ):
+        self._anno_path = anno_path
+        self._data_dir  = data_dir
+        self._if_split  = if_split
+        self._train_ratio = train_ratio
+        self._height = 112
+        self._width = 96
+
+        _prepareEverything( anno_path , data_dir )
+    def _prepareEverything( self , anno_path , data_dir ):
+        # read info from annotation file
+        anno_info = np.genfromtxt( anno_path, delimiter=" ", unpack=True, \
+                dtype= 'str')
+        if not _try_fetchIMG( anno_info ):
+            print( "the dataset could not be loaded!" )
+            return
+
+        self._num_images = len( anno_info[0] )
+        if _if_split:
+            self._num_train_images = _train_ratio * _num_images
+            self._num_test_images  = _num_images - _num_train_images
+
+    def _try_fetchIMG( self , anno_info ):
+        """
+        in initialization, we make some test in fetching
+        """
+        img_path = anno_info[0]
+        try_num = min( 5 , len( anno_info[0] ) )
+        
+        for _ in range( try_num ):
+            try_index = np.random.randint( 0 , len( anno_info[0] ) -1 )
+            try_path = os.path.join( self._data_dir , anno_info[0][try_index] )
+            img = cv2.imread( try_path )
+
+            if img == None:
+                print( "the img %s doesn't exist" % try_path )
+                return False
+        return True
+
+    def dataStream( self , batch_size , if_shuffle = True ):
+        dataset = tf.data.TextLineDataset( anno_path )
+        dataset = dataset.map( _parser )
+        if if_shuffle:
+            dataset = dataset.shuffle( 10 * batch_size )
+        dataset = dataset.repeat().prefetch( 10 * batch_size )
+        dataset = dataset.batch( batch_size )
+
+        return dataset
+
+    def trainDataStream( self , batch_size , if_shuffle = True ):
+        dataset = tf.data.TextLineDataset( anno_path )
+        dataset = dataset.take( _num_train_images )
+        dataset = dataset.map( _parser )
+        if if_shuffle:
+            dataset = dataset.shuffle( 10 * batch_size )
+        dataset = dataset.repeat().prefetch( 10 * batch_size )
+        dataset = dataset.batch( batch_size )
+
+        return dataset
+
+    def testDataStream( self , batch_size ):
+        dataset = tf.data.TextLineDataset( anno_path )
+        dataset = dataset.skip( _num_train_images )
+        dataset = dataset.map( _parser )
+        dataset = dataset.prefetch( 10 * batch_size )
+        dataset = dataset.batch( batch_size )
+
+        return dataset
+    
+    def _parser( line ):
+        """
+        data line in landmark file in a form:
+            data_path ID_number x1 y1 x2 y2 x3 y3 x4 y4 x5 y5
+        """
+        FIELD_DEFAULT = [ ['IMG_PATH'] , [0], [0.], [0.], [0.], [0.]\
+                , [0.], [0.], [0.], [0.], [0.], [0.] ]
+        fields = tf.decode_csv( line , FIELD_DEFAULT )
+        content = tf.read_file( _data_dir + '/' + fields[0] )
+
+        # transfer the landmark into 
+        # x1, x2, x3, x4, x5, y1, y2, y3, y4, y5 format
+        landmarks = tf.concat( fields[2], fields[4], fields[6], fields[8]\
+                , fields[10], fields[3], fields[5], fields[7], fields[9], \
+                fields[11] )
+        tf_image = tf.image.decode_jpeg( content , channels = 3 )
+
+        # scale the landmarks in the range 0 to 1
+        height = tf.to_double( tf.shape( tf_image )[0] )
+        width  = tf.to_double( tf.shape( tf_image )[1] )
+
+        transformed_landmarks = tf.concat( [ landmarks[0:5] / width, \
+                landmarks[5:10] / height] , -1 )
+
+        tf_image = tf.image.resize_images( tf_image , [ _height , _width ] )
+        tf_image = tf_image - 128
+        tf_image = tf.scalar_mul( 1./255,  tf_image )
+        tf_image = tf.reshape( tf_image , [ _height, _width , 3 ] )
+
+        # recently not need to return a dict
+        # i don't use Estimator here
+        return tf_image , transformed_landmarks
+
+        
 class args( object ):
     pass
 
@@ -174,27 +292,13 @@ def input_parser( image_path, landmarks, gender, smile, glasses, pose ):
             gender = gender, smile = smile, glasses = glasses, pose = pose )
 
 if __name__ == "__main__":
-    image_path , landmarks, gender, smile, glasses, pose = load_path( args.data_path , True )
+    sess = tf.InteractiveSession()
 
-    def transfer( path ):
-        img = cv2.imread( path )
-        img_resize = cv2.resize( img , ( 100 , 100 ) )
-        return img_resize
+    ms_data = MSCELEB( anno_path , data_dir )
+    iterator = ms_data.dataStream( batch_size = 32 )
+    imgs , landmarks = iterator.get_next().run()
 
-    imgs = list( map( transfer , image_path ) )
-    imgs = np.array( imgs )
-    print( imgs.shape )
-    print( imgs[0].shape )
-    print( imgs[9999].shape )
-
-    print( landmarks.shape )
-
-    sss = tf.convert_to_tensor( imgs )
-
-    fetch_numpy_arrays( args.data_path , False )
-
-    write_resized_test_img( args.data_path , output_dir = "resized" )
-
+    print( landmarks )
     """
     iterator = train_eval_input_fn( args.data_path , batch_size = 8 ).make_one_shot_iterator()
     next_element = iterator.get_next()
