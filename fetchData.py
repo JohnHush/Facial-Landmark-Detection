@@ -67,17 +67,17 @@ class MSCELEB( object ):
         return True
 
     def dataStream( self , batch_size , if_shuffle = True ):
-        dataset = tf.data.TextLineDataset( anno_path )
+        dataset = tf.data.TextLineDataset( self._anno_path )
         dataset = dataset.map( self._parser )
         if if_shuffle:
             dataset = dataset.shuffle( 10 * batch_size )
         dataset = dataset.repeat().prefetch( 10 * batch_size )
         dataset = dataset.batch( batch_size )
 
-        return dataset
+        return dataset.make_one_shot_iterator().get_next()
 
     def trainDataStream( self , batch_size , if_shuffle = True ):
-        dataset = tf.data.TextLineDataset( anno_path )
+        dataset = tf.data.TextLineDataset( self._anno_path )
         dataset = dataset.take( self._num_train_images )
         dataset = dataset.map( self._parser )
         if if_shuffle:
@@ -85,16 +85,16 @@ class MSCELEB( object ):
         dataset = dataset.repeat().prefetch( 10 * batch_size )
         dataset = dataset.batch( batch_size )
 
-        return dataset
+        return dataset.make_one_shot_iterator().get_next()
 
     def testDataStream( self , batch_size ):
-        dataset = tf.data.TextLineDataset( anno_path )
+        dataset = tf.data.TextLineDataset( self._anno_path )
         dataset = dataset.skip( self._num_train_images )
         dataset = dataset.map( self._parser )
         dataset = dataset.prefetch( 10 * batch_size )
         dataset = dataset.batch( batch_size )
 
-        return dataset
+        return dataset.make_one_shot_iterator().get_next()
     
     def _parser( self , line ):
         """
@@ -122,7 +122,7 @@ class MSCELEB( object ):
                 landmarks[5:10] / height] , -1 )
 
         tf_image = tf.image.resize_images( tf_image , [ self._height , self._width ] )
-        #tf_image = tf_image - 128
+        tf_image = tf_image - 128
         tf_image = tf.scalar_mul( 1./255,  tf_image )
         tf_image = tf.reshape( tf_image , [ self._height, self._width , 3 ] )
 
@@ -302,11 +302,10 @@ def input_parser( image_path, landmarks, gender, smile, glasses, pose ):
 if __name__ == "__main__":
     sess = tf.InteractiveSession()
     
-    anno_path = '/home/public/data/celebrity_lmk'
-    data_dir = '/home/public/data'
-    ms_data = MSCELEB( anno_path , data_dir )
-    iterator = ms_data.trainDataStream( batch_size = 10 ).make_one_shot_iterator()
-    imgs , landmarks =  sess.run( iterator.get_next() )
+    anno_path__ = '/home/public/data/celebrity_lmk'
+    data_dir__ = '/home/public/data'
+    ms_data = MSCELEB( anno_path__ , data_dir__ )
+    imgs , landmarks =  sess.run( ms_data.testDataStream( batch_size = 10) )
 
     print( landmarks )
     for i in range( len( imgs ) ):
