@@ -5,6 +5,7 @@ import os.path as op
 import os
 import matplotlib.pyplot as plt
 from functools import reduce
+import tempfile
 
 class MSCELEB( object ):
     """
@@ -28,12 +29,15 @@ class MSCELEB( object ):
         self._height = 112
         self._width = 96
 
-        self._prepareEverything( anno_path , data_dir )
-    def _prepareEverything( self , anno_path , data_dir ):
+        # set the tmp dir to save train anno file and test ano file
+        tempfile.tempdir = '/home/public/data/tmp'
+
+        self._prepareEverything( )
+    def _prepareEverything( self ):
         # read info from annotation file
         #anno_info = np.genfromtxt( anno_path, delimiter=" ", unpack=True, \
         #        dtype= 'str')
-        with open( anno_path , 'r' ) as fo:
+        with open( self._anno_path , 'r' ) as fo:
             try_fetch = fo.readline().strip()
             split_list = try_fetch.split( ' ' )
 
@@ -42,9 +46,20 @@ class MSCELEB( object ):
             return
 
         self._num_images = self._lines_num( anno_path )
+
         if self._if_split:
             self._num_train_images = int( self._train_ratio * self._num_images )
             self._num_test_images  = int( self._num_images - self._num_train_images )
+            _ , self._train_file = tempfile.mkstemp( suffix = 'train' )
+            _ , self._test_file  = tempfile.mkstemp( suffix = 'test' )
+
+            # split into two files
+            with open( self._anno_path , 'r' ) as fr:
+                lines = fr.readlines()
+                with open( self._train_file , 'w' ) as fw:
+                    fw.writelines( lines[ 0: self._num_train_images ] )
+                with open( self._test_file , 'w' ) as fw:
+                    fw.writelines( lines[ self._num_train_images : ] )
 
     def _lines_num( self , file ):
         count = 0
@@ -77,8 +92,8 @@ class MSCELEB( object ):
         return dataset.make_one_shot_iterator().get_next()
 
     def trainDataStream( self , batch_size , if_shuffle = True ):
-        dataset = tf.data.TextLineDataset( self._anno_path )
-        dataset = dataset.take( self._num_train_images )
+        dataset = tf.data.TextLineDataset( self._train_file )
+        #dataset = dataset.take( self._num_train_images )
         dataset = dataset.map( self._parser )
         if if_shuffle:
             dataset = dataset.shuffle( 10 * batch_size )
@@ -88,8 +103,8 @@ class MSCELEB( object ):
         return dataset.make_one_shot_iterator().get_next()
 
     def testDataStream( self , batch_size ):
-        dataset = tf.data.TextLineDataset( self._anno_path )
-        dataset = dataset.skip( self._num_train_images )
+        dataset = tf.data.TextLineDataset( self._test_file )
+        #dataset = dataset.skip( self._num_train_images )
         dataset = dataset.map( self._parser )
         dataset = dataset.prefetch( 10 * batch_size )
         dataset = dataset.batch( batch_size )
