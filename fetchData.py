@@ -81,7 +81,7 @@ class MSCELEB( object ):
             return False
         return True
 
-    def exportTestData( out_dir , out_size = [] ):
+    def exportTestData( self ,  out_dir , out_size ):
         if not self._if_split:
             print( "this dataset hasn't been splitted, it \
                     shouldn't be exported!" )
@@ -90,7 +90,7 @@ class MSCELEB( object ):
         with open( self._test_file , 'r' ) as fr:
             lines = fr.readlines()
         for line in lines:
-            split_line = line.split( ' ' ).strip()
+            split_line = line.strip().split( ' ' )
             img_path = os.path.join( self._data_dir , split_line[0] )
             img = cv2.imread( img_path )
             if len(out_size) == 2:
@@ -343,6 +343,8 @@ if __name__ == "__main__":
     anno_path__ = '/home/public/data/celebrity_lmk'
     data_dir__ = '/home/public/data'
     ms_data = MSCELEB( anno_path__ , data_dir__ )
+    ms_data.exportTestData( '/home/public/data/tmp/testdata' ,\
+            [112, 96 ] )
     imgs , landmarks =  sess.run( ms_data.testDataStream( batch_size = 10) )
 
     print( landmarks )
