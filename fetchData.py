@@ -45,6 +45,17 @@ class MSCELEB( object ):
             print( "the dataset could not be loaded!" )
             return
 
+        with open( self._anno_path , 'r' ) as fr:
+            lines = fr.readlines()
+
+        # make a dict, key is the file name, value is landmark
+        self._imgName_landmark_dict = {}
+        for line in lines:
+            split_line = line.strip().split( ' ' )
+            key = split_line[0]
+            value = [ float(x) for x in split_line[ 2 : ] ]
+            self._imgName_landmark_dict[key] = value
+
         self._num_images = self._lines_num( self._anno_path )
 
         if self._if_split:
@@ -52,14 +63,45 @@ class MSCELEB( object ):
             self._num_test_images  = int( self._num_images - self._num_train_images )
             _ , self._train_file = tempfile.mkstemp( suffix = 'train' )
             _ , self._test_file  = tempfile.mkstemp( suffix = 'test' )
+            self._trainImgName_landmark_dict[key] = {}
+            self._testImgName_landmark_dict[key]  = {}
 
             # split into two files
-            with open( self._anno_path , 'r' ) as fr:
-                lines = fr.readlines()
-                with open( self._train_file , 'w' ) as fw:
-                    fw.writelines( lines[ 0: self._num_train_images ] )
-                with open( self._test_file , 'w' ) as fw:
-                    fw.writelines( lines[ self._num_train_images : ] )
+            with open( self._train_file , 'w' ) as fw:
+                fw.writelines( lines[ 0: self._num_train_images ] )
+
+                for line in lines[ 0: self._num_train_images ]:
+                    split_line = line.strip().split( ' ' )
+                    key = split_line[0]
+                    value = [ float(x) for x in split_line[ 2 : ] ]
+                    self._trainImgName_landmark_dict[key] = value
+
+            with open( self._test_file , 'w' ) as fw:
+                fw.writelines( lines[ self._num_train_images : ] )
+
+                for line in lines[ self._num_train_images : ]:
+                    split_line = line.strip().split( ' ' )
+                    key = split_line[0]
+                    value = [ float(x) for x in split_line[ 2 : ] ]
+                    self._testImgName_landmark_dict[key] = value
+
+    @property
+    def imgName_landmark_dict( self ):
+        return self._imgName_landmark_dict
+
+    @property
+    def trainImgName_landmark_dict( self ):
+        if not self._if_split:
+            print( "there is no train dict generated cause no splitting!" )
+            return {}
+        return self._trainImgName_landmark_dict
+
+    @property
+    def testImgName_landmark_dict( self ):
+        if not self._if_split:
+            print( "there is no test dict generated cause no splitting!" )
+            return {}
+        return self._testImgName_landmark_dict
 
     def _lines_num( self , file ):
         count = 0
@@ -343,9 +385,17 @@ if __name__ == "__main__":
     anno_path__ = '/home/public/data/celebrity_lmk'
     data_dir__ = '/home/public/data'
     ms_data = MSCELEB( anno_path__ , data_dir__ )
-    ms_data.exportTestData( '/home/public/data/tmp/testdata' ,\
-            [112, 96 ] )
-    imgs , landmarks =  sess.run( ms_data.testDataStream( batch_size = 10) )
+    #ms_data.exportTestData( '/home/public/data/tmp/testdata' ,\
+    #        [112, 96 ] )
+
+   
+    count = 0 
+    for kv in ms_data.testImgName_landmark_dict.items():
+        count = count + 1
+        print( kv )
+        if count > 100:
+            break
+    imgs , landmarks =  sess.run( ms_data.testDataStream( batch_size = 5 ) )
 
     print( landmarks )
     for i in range( len( imgs ) ):
