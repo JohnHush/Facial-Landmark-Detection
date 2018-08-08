@@ -45,7 +45,7 @@ class MSCELEB( object ):
             print( "the dataset could not be loaded!" )
             return
 
-        self._num_images = self._lines_num( anno_path )
+        self._num_images = self._lines_num( self._anno_path )
 
         if self._if_split:
             self._num_train_images = int( self._train_ratio * self._num_images )
@@ -80,6 +80,29 @@ class MSCELEB( object ):
         if img is None:
             return False
         return True
+
+    def exportTestData( out_dir , out_size = [] ):
+        if not self._if_split:
+            print( "this dataset hasn't been splitted, it \
+                    shouldn't be exported!" )
+            return
+
+        with open( self._test_file , 'r' ) as fr:
+            lines = fr.readlines()
+        for line in lines:
+            split_line = line.split( ' ' ).strip()
+            img_path = os.path.join( self._data_dir , split_line[0] )
+            img = cv2.imread( img_path )
+            if len(out_size) == 2:
+                # here in opencv , resize function accept :
+                # width , height parameters
+                # it's a little confusing
+                img = cv2.resize( img , ( out_size[1] , out_size[0] ) )
+
+            output_path = os.path.join( out_dir , \
+                    img_path[ img_path.rfind('/') + 1:] )
+
+            cv2.imwrite( output_path , img )
 
     def dataStream( self , batch_size , if_shuffle = True ):
         dataset = tf.data.TextLineDataset( self._anno_path )
