@@ -19,14 +19,14 @@ def run_MSCELEB():
     4. Loop all the qualified query one in, and average them
     """
     anno_path = "/home/public/data/celebrity_lmk"
+    data_dir = "/home/public/data"
 
+    ms_data = fetchData.MSCELEB(anno_path, data_dir )
 
-    image_path , landmarks, gender, smile, glasses, pose = \
-            fetchData.load_path( data_path , if_train = False )
+    imdb = list( ms_data.testImgName_landmark_dict.items() )
+    imdb = list( map( lambda s : ( s[0] , np.array(s[1]) ) , imdb ) )
 
-    imdb = list( zip( image_path , landmarks ) )
-
-    with open( 'mtcnn_test_results.txt' , 'r' ) as f:
+    with open( 'mtcnn_msceleb_results.txt' , 'r' ) as f:
         lines = f.readlines()
 
     lines = [ line for line in lines if \
@@ -34,12 +34,18 @@ def run_MSCELEB():
             len( line.split( '|' )[-1].strip().split( ' ' ) ) == 10 ]
 
     errors = []
+    count = 0
     for line in lines:
+        count = count + 1
+        if count % 20 ==0:
+            print( count )
         line_split = list( map ( lambda s: s.strip() , line.split( '|' ) ))
         _key = line_split[0].split( '/' )[-1]
-        predict_landmarks = list( map( lambda s: float( s ) , line_split[-1].split( ' ' ) ) )
+        predict_landmarks = list( map( lambda s: float( s ) ,\
+                line_split[-1].split( ' ' ) ) )
 
         imdb_info = [ s for s in imdb if s[0].find(_key) != -1 ]
+
         assert len( imdb_info ) == 1
 
         img = cv2.imread( imdb_info[0][0] )
@@ -116,4 +122,4 @@ def run():
     print( errors_mean )
 
 if __name__ == "__main__":
-    run()
+    run_MSCELEB()

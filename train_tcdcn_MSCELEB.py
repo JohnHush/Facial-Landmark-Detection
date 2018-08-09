@@ -126,6 +126,8 @@ if __name__ == "__main__":
     tf.summary.scalar( "left_Mouth_Dev" , left_MDev )
     tf.summary.scalar( "right_Mouth_Dev" , right_MDev )
 
+
+    print( tf.trainable_variables() )
     trainable_layers = [ 'landmark' ]
     trainable_list = [ v for v in tf.trainable_variables() if \
             v.name.split('/')[0] in trainable_layers]

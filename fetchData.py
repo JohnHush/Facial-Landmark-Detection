@@ -52,8 +52,9 @@ class MSCELEB( object ):
         self._imgName_landmark_dict = {}
         for line in lines:
             split_line = line.strip().split( ' ' )
-            key = split_line[0]
+            key = os.path.join( self._data_dir , split_line[0] )
             value = [ float(x) for x in split_line[ 2 : ] ]
+            value = value[ 0::2 ] + value[ 1::2 ]
             self._imgName_landmark_dict[key] = value
 
         self._num_images = self._lines_num( self._anno_path )
@@ -63,8 +64,8 @@ class MSCELEB( object ):
             self._num_test_images  = int( self._num_images - self._num_train_images )
             _ , self._train_file = tempfile.mkstemp( suffix = 'train' )
             _ , self._test_file  = tempfile.mkstemp( suffix = 'test' )
-            self._trainImgName_landmark_dict[key] = {}
-            self._testImgName_landmark_dict[key]  = {}
+            self._trainImgName_landmark_dict = {}
+            self._testImgName_landmark_dict  = {}
 
             # split into two files
             with open( self._train_file , 'w' ) as fw:
@@ -72,8 +73,9 @@ class MSCELEB( object ):
 
                 for line in lines[ 0: self._num_train_images ]:
                     split_line = line.strip().split( ' ' )
-                    key = split_line[0]
+                    key = os.path.join( self._data_dir , split_line[0] )
                     value = [ float(x) for x in split_line[ 2 : ] ]
+                    value = value[ 0::2 ] + value[ 1::2 ]
                     self._trainImgName_landmark_dict[key] = value
 
             with open( self._test_file , 'w' ) as fw:
@@ -81,8 +83,9 @@ class MSCELEB( object ):
 
                 for line in lines[ self._num_train_images : ]:
                     split_line = line.strip().split( ' ' )
-                    key = split_line[0]
+                    key = os.path.join( self._data_dir , split_line[0] )
                     value = [ float(x) for x in split_line[ 2 : ] ]
+                    value = value[ 0::2 ] + value[ 1::2 ]
                     self._testImgName_landmark_dict[key] = value
 
     @property
@@ -162,7 +165,7 @@ class MSCELEB( object ):
         dataset = dataset.map( self._parser )
         if if_shuffle:
             dataset = dataset.shuffle( 10 * batch_size )
-        dataset = dataset.repeat().prefetch( 10 * batch_size )
+        dataset = dataset.repeat().prefetch( 20 * batch_size )
         dataset = dataset.batch( batch_size )
 
         return dataset.make_one_shot_iterator().get_next()
@@ -171,7 +174,7 @@ class MSCELEB( object ):
         dataset = tf.data.TextLineDataset( self._test_file )
         #dataset = dataset.skip( self._num_train_images )
         dataset = dataset.map( self._parser )
-        dataset = dataset.prefetch( 10 * batch_size )
+        dataset = dataset.repeat().prefetch( 10 * batch_size )
         dataset = dataset.batch( batch_size )
 
         return dataset.make_one_shot_iterator().get_next()
