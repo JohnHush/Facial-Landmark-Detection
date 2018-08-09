@@ -126,11 +126,13 @@ if __name__ == "__main__":
     tf.summary.scalar( "left_Mouth_Dev" , left_MDev )
     tf.summary.scalar( "right_Mouth_Dev" , right_MDev )
 
+    for v in tf.global_variables():
+        tf.add_to_collection( 'trainable_variables' , v )
 
-    print( tf.trainable_variables() )
     trainable_layers = [ 'landmark' ]
     trainable_list = [ v for v in tf.trainable_variables() if \
             v.name.split('/')[0] in trainable_layers]
+    trainable_list = tf.trainable_variables()
 
     print( trainable_list )
 
@@ -143,6 +145,7 @@ if __name__ == "__main__":
     test_writer = tf.summary.FileWriter( './tflog/test' )
 
     sess.run( tf.global_variables_initializer() )
+
     for i in range( 200000 ):
         train_images , train_landmarks = sess.run( train_data_ops )
         _ , loss , summary = sess.run(\
