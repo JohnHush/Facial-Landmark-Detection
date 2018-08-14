@@ -220,6 +220,130 @@ class args( object ):
 args.RESIZE_SIZE = 48
 args.data_path = "/Users/pitaloveu/working_data/MTFL"
 
+
+class MTFL( object ):
+    """
+    contains 12,995 images with annotated with:
+        1. five facial landmarks
+        2. attributes: gender, smile , glasses, pose 
+
+    wanna details of this dataset, please refer to 
+    ECCV 2014 paper "Facial Landmark Detection by Deep Multi-task Learning"
+    """
+    def __init__( self , data_path ):
+        self._data_path = data_path
+        self._height = 112
+        self._width  = 96
+
+        tempfile.tempdir = os.path.join( self._data_path , 'tmp' )
+
+        self._prepareEverything()
+    
+    def _prepareEverything( self ):
+        _ , self._train_file = tempfile.mkstemp( suffix = 'train' )
+        _ , self._test_file  = tempfile.mkstemp( suffix = 'test' )
+
+        ori_train_file = os.path.join( self._data_path , "training.txt" )
+        ori_test_file  = os.path.join( self._data_path , "testing.txt" )
+
+        with open( ori_train_file , 'r' ) as fr:
+            lines = fr.readlines()
+            lines = [ line.strip( ' ' ) for line in lines if line.strip( ' ' ) != '' ]
+            lines = list( map( lambda s: s.replace('\\' , '/') , lines ) )
+
+            with open( self._train_file , 'w' ) as fw:
+                fw.writelines( lines )
+
+        with open( ori_test_file , 'r' ) as fr:
+            lines = fr.readlines()
+            lines = [ line.strip( ' ' ) for line in lines if line.strip(' ') != '' ]
+            lines = list( map( lambda s: s.replace('\\' , '/') , lines ) )
+
+            with open( self._test_file , 'w' ) as fw:
+                fw.writelines( lines )
+
+    def _parser( self , line , if_train ):
+        """
+        data line in annotation file in a form:
+          relative_data_path  x1 x2 x3 x4 x5 y1 y2 y3 y4 y5 #gender #smile #glass #pose
+        """
+        FIELD_DEFAULT = [ ['IMAGE_PATH'] , [0.], [0.],[0.],[0.],[0.],[0.],\
+                [0.],[0.],[0.],[0.], [0], [0] , [0] , [0] ]
+
+        fields = tf.decode_csv( line , FIELD_DEFAULT , field_delim = ' ' )
+        content = tf.read_file( self._data_path + '/' + fields[0] )
+
+        landmarks = tf.stack( [ fields[1], fields[2], fields[3], fields[4], \
+                fields[5], fields[6], fields[7], fields[8], fields[9],\
+                fields[10] ] , axis = -1 )
+
+        tf_image = tf.image.decode_jpeg( content , channels = 3 )
+        if if_train:
+            tf_image = tf.image.random_brightness( tf_image , max_delta = 0.5 )
+            tf_image = tf.image.random_contrast( tf_image , 0.2 , 0.7 )
+
+        height = tf.to_float( tf.shape( tf_image )[0] )
+        width  = tf.to_float( tf.shape( tf_image )[1] )
+
+        transformed_landmarks = tf.concat( [ landmarks[0:5] / width, \
+                landmarks[5:10] / height] , -1 )
+
+        tf_image = tf.image.resize_images( tf_image , [ self._height , self._width ] \
+                , method = tf.image.ResizeMethod.NEAREST_NEIGHBOR )
+        tf_image = tf.to_float( tf_image )
+        tf_image = tf_image - 128
+        tf_image = tf.scalar_mul( 1./255,  tf_image )
+        tf_image = tf.reshape( tf_image , [ self._height, self._width , 3 ] )
+
+        return tf_image , transformed_landmarks
+
+    def trainDataStream( self , batch_size , if_shuffle = True ):
+        dataset = tf.data.TextLineDataset( self._train_file )
+        dataset = dataset.map( lambda line : self._parser( line , True ) )
+        if if_shuffle:
+            dataset = dataset.shuffle( 10 * batch_size )
+        dataset = dataset.repeat().prefetch( 20 * batch_size )
+        dataset = dataset.batch( batch_size )
+
+        return dataset.make_one_shot_iterator().get_next()
+
+    def testDataStream( self, batch_size ):
+        dataset = tf.data.TextLineDataset( self._test_file )
+        dataset = dataset.map( lambda line : self._parser( line , False) )
+        dataset = dataset.repeat().prefetch( 10 * batch_size )
+        dataset = dataset.batch( batch_size )
+
+        return dataset.make_one_shot_iterator().get_next()
+
+    def exportTestData( self , out_dir , out_size ):
+        """
+        this function is built originally for MTCNN test
+        we export the specified sized images to reduce the computation
+        in reading the original images repeatedly
+
+        ANYWAY, this could be deprecated
+        """
+        test_file = os.path.join( self._data_path , "testing.txt" )
+
+        with open( test_file , 'r' ) as fr:
+            lines = fr.readlines()
+        for line in lines:
+            split_line = line.strip().split( ' ' )
+            split_line[0] = split_line[0].replace( '\\' , '/' )
+            img_path = os.path.join( self._data_path , split_line[0] )
+            img = cv2.imread( img_path )
+            if len(out_size) == 2:
+                # here in opencv , resize function accept :
+                # width , height parameters
+                # it's a little confusing
+                img = cv2.resize( img , ( out_size[1] , out_size[0] ) )
+
+            output_path = os.path.join( out_dir , \
+                    img_path[ img_path.rfind('/') + 1:] )
+
+            cv2.imwrite( output_path , img )
+
+
 def write_resized_test_img( data_path , output_dir = "resized" ):
     image_path , landmarks, gender, smile, glasses, pose = \
             load_path( data_path , if_train = False )
@@ -384,21 +508,21 @@ def input_parser( image_path, landmarks, gender, smile, glasses, pose ):
 
 if __name__ == "__main__":
     sess = tf.InteractiveSession()
-    
-    anno_path__ = '/home/public/data/celebrity_lmk'
-    data_dir__ = '/home/public/data'
-    ms_data = MSCELEB( anno_path__ , data_dir__ )
+   
+    data_path = "/Users/pitaloveu/working_data/MTFL"
+    ms_data = MTFL( data_path )
     #ms_data.exportTestData( '/home/public/data/tmp/testdata' ,\
     #        [112, 96 ] )
 
    
-    count = 0 
-    for kv in ms_data.testImgName_landmark_dict.items():
-        count = count + 1
-        print( kv )
-        if count > 100:
-            break
-    imgs , landmarks =  sess.run( ms_data.testDataStream( batch_size = 5 ) )
+    #count = 0 
+    #for kv in ms_data.testImgName_landmark_dict.items():
+    #    count = count + 1
+    #    print( kv )
+    #    if count > 100:
+    #        break
+
+    imgs , landmarks =  sess.run( ms_data.trainDataStream( batch_size = 5 ) )
 
     print( landmarks )
     for i in range( len( imgs ) ):
