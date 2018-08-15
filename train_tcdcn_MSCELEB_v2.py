@@ -95,9 +95,11 @@ if __name__ == "__main__":
     data_path = "/home/public/data"
 
     msData = fetchData.MSCELEB( anno_path , data_path )
+    mtflData = fetchData.MTFL( '/home/jh/working_data/MTFL' )
 
     train_data_ops = msData.trainDataStream( batch_size=256 )
-    test_data_ops  = msData.testDataStream( batch_size=256 )
+    #test_data_ops  = msData.testDataStream( batch_size=256 )
+    test_data_ops  = mtflData.testDataStream( batch_size=256 )
 
     # i suppose tf.Session is more intuitive
     sess = tf.Session()
@@ -153,6 +155,10 @@ if __name__ == "__main__":
 
     sess.run( tf.global_variables_initializer() )
 
+    tf.saved_model.simple_save( sess , './trained_model' , \
+              inputs = { 'images' : input } , \
+              outputs = { 'landmarks' : landmark } )
+
     for i in range( 200000 ):
         train_images , train_landmarks = sess.run( train_data_ops )
         _ , loss , summary = sess.run(\
@@ -164,6 +170,7 @@ if __name__ == "__main__":
 
         train_writer.add_summary( summary , i )
         print( "training loss equals to : %f" % loss  )
+
 
         if i% 10 == 0:
             test_images , test_landmarks = sess.run( test_data_ops )

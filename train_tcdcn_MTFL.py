@@ -94,19 +94,20 @@ if __name__ == "__main__":
     #anno_path = "/home/public/data/celebrity_lmk"
     #data_path = "/home/public/data"
 
-    data_path = "/Users/pitaloveu/working_data/MTFL"
+    #data_path = "/Users/pitaloveu/working_data/MTFL"
+    data_path = "/home/jh/working_data/MTFL"
     msData = fetchData.MTFL(data_path )
 
-    train_data_ops = msData.trainDataStream( batch_size=64 )
-    test_data_ops  = msData.testDataStream( batch_size=64 )
+    train_data_ops = msData.trainDataStream( batch_size=256 )
+    test_data_ops  = msData.testDataStream( batch_size=256 )
 
     # i suppose tf.Session is more intuitive
     sess = tf.Session()
 
-    saver = tf.train.import_meta_graph( ckpt_path + '.meta')
+    #saver = tf.train.import_meta_graph( ckpt_path + '.meta')
 
-    #tf.saved_model.loader.load( sess , [tf.saved_model.tag_constants.TRAINING] , \
-    #        saved_model_dir )
+    tf.saved_model.loader.load( sess , [tf.saved_model.tag_constants.TRAINING] , \
+            saved_model_dir )
 
     graph = tf.get_default_graph()
 
@@ -137,7 +138,7 @@ if __name__ == "__main__":
     #for v in tf.global_variables():
     #    tf.add_to_collection( 'trainable_variables' , v )
 
-    trainable_layers = [ 'landmark' , 'dense']
+    trainable_layers = [ 'landmark' ]
     trainable_list = [ v for v in tf.trainable_variables() if \
             v.name.split('/')[0] in trainable_layers]
     #trainable_list = tf.trainable_variables()
@@ -164,7 +165,7 @@ if __name__ == "__main__":
                 )
 
         train_writer.add_summary( summary , i )
-        print( "training loss equals to : %f" % loss  )
+        print( "iteration = %d , training loss equals to : %f" % (i, loss)  )
 
         if i% 10 == 0:
             test_images , test_landmarks = sess.run( test_data_ops )

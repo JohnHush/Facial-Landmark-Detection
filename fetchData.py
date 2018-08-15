@@ -288,9 +288,10 @@ class MTFL( object ):
         transformed_landmarks = tf.concat( [ landmarks[0:5] / width, \
                 landmarks[5:10] / height] , -1 )
 
-        tf_image = tf.image.resize_images( tf_image , [ self._height , self._width ] \
-                , method = tf.image.ResizeMethod.NEAREST_NEIGHBOR )
-        tf_image = tf.to_float( tf_image )
+        #tf_image = tf.image.resize_images( tf_image , [ self._height , self._width ] \
+        #        , method = tf.image.ResizeMethod.NEAREST_NEIGHBOR )
+        tf_image = tf.image.resize_images( tf_image , [ self._height , self._width ])
+        #tf_image = tf.to_float( tf_image )
         tf_image = tf_image - 128
         tf_image = tf.scalar_mul( 1./255,  tf_image )
         tf_image = tf.reshape( tf_image , [ self._height, self._width , 3 ] )
@@ -510,6 +511,9 @@ if __name__ == "__main__":
     sess = tf.InteractiveSession()
    
     data_path = "/Users/pitaloveu/working_data/MTFL"
+    data_path = '/home/jh/working_data/MTFL'
+    ms_data = MSCELEB( '/home/public/data/celebrity_lmk' , \
+            '/home/public/data' )
     ms_data = MTFL( data_path )
     #ms_data.exportTestData( '/home/public/data/tmp/testdata' ,\
     #        [112, 96 ] )
@@ -522,12 +526,15 @@ if __name__ == "__main__":
     #    if count > 100:
     #        break
 
-    imgs , landmarks =  sess.run( ms_data.trainDataStream( batch_size = 5 ) )
+    imgs , landmarks =  sess.run( ms_data.testDataStream( batch_size = 50 ) )
 
-    print( landmarks )
-    for i in range( len( imgs ) ):
-        cv2.imshow( "" , imgs[i] )
-        cv2.waitKey()
+    print( landmarks.shape )
+    print( np.mean( landmarks , axis = 0 ))
+
+    #print( landmarks )
+    #for i in range( len( imgs ) ):
+    #    cv2.imshow( "" , imgs[i] )
+    #    cv2.waitKey()
     """
     iterator = train_eval_input_fn( args.data_path , batch_size = 8 ).make_one_shot_iterator()
     next_element = iterator.get_next()
