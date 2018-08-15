@@ -262,6 +262,17 @@ class MTFL( object ):
             with open( self._test_file , 'w' ) as fw:
                 fw.writelines( lines )
 
+    def _poseFilter( self , line , pose ):
+        """
+        used by testDataStreamFilteredByPose
+        """
+        FIELD_DEFAULT = [ ['IMAGE_PATH'] , [0.], [0.],[0.],[0.],[0.],[0.],\
+                [0.],[0.],[0.],[0.], [0], [0] , [0] , [0] ]
+
+        fields = tf.decode_csv( line , FIELD_DEFAULT , field_delim = ' ' )
+
+        return tf.equal( fields[-1] , pose )
+
     def _parser( self , line , if_train ):
         """
         data line in annotation file in a form:
@@ -310,6 +321,15 @@ class MTFL( object ):
 
     def testDataStream( self, batch_size ):
         dataset = tf.data.TextLineDataset( self._test_file )
+        dataset = dataset.map( lambda line : self._parser( line , False) )
+        dataset = dataset.repeat().prefetch( 10 * batch_size )
+        dataset = dataset.batch( batch_size )
+
+        return dataset.make_one_shot_iterator().get_next()
+
+    def testDataStreamFilteredByPose( self, batch_size , pose ):
+        dataset = tf.data.TextLineDataset( self._test_file )
+        dataset = dataset.filter( lambda line: self._poseFilter( line , pose ) )
         dataset = dataset.map( lambda line : self._parser( line , False) )
         dataset = dataset.repeat().prefetch( 10 * batch_size )
         dataset = dataset.batch( batch_size )
@@ -511,9 +531,9 @@ if __name__ == "__main__":
     sess = tf.InteractiveSession()
    
     data_path = "/Users/pitaloveu/working_data/MTFL"
-    data_path = '/home/jh/working_data/MTFL'
-    ms_data = MSCELEB( '/home/public/data/celebrity_lmk' , \
-            '/home/public/data' )
+    #data_path = '/home/jh/working_data/MTFL'
+    #ms_data = MSCELEB( '/home/public/data/celebrity_lmk' , \
+    #        '/home/public/data' )
     ms_data = MTFL( data_path )
     #ms_data.exportTestData( '/home/public/data/tmp/testdata' ,\
     #        [112, 96 ] )
@@ -526,15 +546,14 @@ if __name__ == "__main__":
     #    if count > 100:
     #        break
 
-    imgs , landmarks =  sess.run( ms_data.testDataStream( batch_size = 50 ) )
+    imgs , landmarks =  sess.run( \
+            ms_data.testDataStreamFilteredByPose( batch_size = 32 , pose = 5 ) )
 
-    print( landmarks.shape )
-    print( np.mean( landmarks , axis = 0 ))
 
-    #print( landmarks )
-    #for i in range( len( imgs ) ):
-    #    cv2.imshow( "" , imgs[i] )
-    #    cv2.waitKey()
+    print( landmarks )
+    for i in range( len( imgs ) ):
+        cv2.imshow( "" , imgs[i] )
+        cv2.waitKey()
     """
     iterator = train_eval_input_fn( args.data_path , batch_size = 8 ).make_one_shot_iterator()
     next_element = iterator.get_next()

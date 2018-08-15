@@ -159,7 +159,7 @@ if __name__ == "__main__":
               inputs = { 'images' : input } , \
               outputs = { 'landmarks' : landmark } )
 
-    for i in range( 200000 ):
+    for i in range( 10000 ):
         train_images , train_landmarks = sess.run( train_data_ops )
         _ , loss , summary = sess.run(\
                 [ train_op , loss_landmark , \
