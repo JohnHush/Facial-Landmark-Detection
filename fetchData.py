@@ -213,14 +213,6 @@ class MSCELEB( object ):
         # i don't use Estimator here
         return tf_image , transformed_landmarks
 
-        
-class args( object ):
-    pass
-
-args.RESIZE_SIZE = 48
-args.data_path = "/Users/pitaloveu/working_data/MTFL"
-
-
 class MTFL( object ):
     """
     contains 12,995 images with annotated with:
@@ -273,7 +265,7 @@ class MTFL( object ):
 
         return tf.equal( fields[-1] , pose )
 
-    def _parser( self , line , if_train ):
+    def _parser( self , line , if_train , if_aligned = False ):
         """
         data line in annotation file in a form:
           relative_data_path  x1 x2 x3 x4 x5 y1 y2 y3 y4 y5 #gender #smile #glass #pose
@@ -299,15 +291,75 @@ class MTFL( object ):
         transformed_landmarks = tf.concat( [ landmarks[0:5] / width, \
                 landmarks[5:10] / height] , -1 )
 
+        if if_aligned:
+            tf_image , transformed_landmarks = \
+                    self._alignLandmark( tf_image , transformed_landmarks )
+
         #tf_image = tf.image.resize_images( tf_image , [ self._height , self._width ] \
         #        , method = tf.image.ResizeMethod.NEAREST_NEIGHBOR )
         tf_image = tf.image.resize_images( tf_image , [ self._height , self._width ])
         #tf_image = tf.to_float( tf_image )
+
         tf_image = tf_image - 128
         tf_image = tf.scalar_mul( 1./255,  tf_image )
         tf_image = tf.reshape( tf_image , [ self._height, self._width , 3 ] )
 
         return tf_image , transformed_landmarks
+
+    def _computeAngle( self , landmarks ):
+        """
+        use the coordinates of two eyes to compute the rotation angle
+        actually, the rotation is determined by the TensorFlow Api
+        the central point is set to be the rotation center in default
+        """
+        dx = landmarks[1] - landmarks[0]
+        dy = landmarks[6] - landmarks[5]
+
+        # returned theta in [ -pi , pi ]
+        # fullfil  x = r * cos( theta )
+        #           y = r * sin( theta )
+        return tf.atan2( dy , dx )
+
+    def _alignLandmark( self , tf_image , landmarks ):
+        """
+        the line contains: image_TENSORS , landmarks_TENSORS
+        first we only rotate the image by testing usage
+        """
+        #tf_image = tf.contrib.image.rotate( \
+        #        tf_image , 0.2 )
+        #return tf_image , landmarks 
+        height = tf.to_float( tf.shape( tf_image )[0] )
+        width  = tf.to_float( tf.shape( tf_image )[1] )
+
+        theta = self._computeAngle( landmarks )
+        inverse_projective_matrix = tf.contrib.image.angles_to_projective_transforms( \
+                theta , height , width )
+        projective_matrix = tf.contrib.image.angles_to_projective_transforms( \
+                -theta , height , width )
+
+        tf_image = tf.contrib.image.transform( tf_image , inverse_projective_matrix )
+   
+        a0 = projective_matrix[0][0]
+        a1 = projective_matrix[0][1]
+        a2 = projective_matrix[0][2]
+        b0 = projective_matrix[0][3]
+        b1 = projective_matrix[0][4]
+        b2 = projective_matrix[0][5]
+        c0 = projective_matrix[0][6]
+        c1 = projective_matrix[0][7]
+
+        landmarks = tf.concat( [ landmarks[0:5] * width, \
+                landmarks[5:10] * height] , -1 )
+
+        landmarks =tf.concat( [ ( a0 * landmarks[0:5] + a1 * landmarks[5:] + a2 ) / \
+                ( c0 * landmarks[0:5] + c1 * landmarks[5:] + 1 )  , \
+                ( b0 * landmarks[0:5] + b1 * landmarks[5:] + b2 ) / \
+                ( c0 * landmarks[0:5] + c1 * landmarks[5:] + 1 ) ] , axis = -1 )
+
+        landmarks = tf.concat( [ landmarks[0:5] / width, \
+                landmarks[5:10] / height] , -1 )
+
+        return tf_image , landmarks
 
     def trainDataStream( self , batch_size , if_shuffle = True ):
         dataset = tf.data.TextLineDataset( self._train_file )
@@ -327,6 +379,15 @@ class MTFL( object ):
 
         return dataset.make_one_shot_iterator().get_next()
 
+    def testDataStreamAligned( self, batch_size ):
+        dataset = tf.data.TextLineDataset( self._test_file )
+        dataset = dataset.map( lambda line : self._parser( line , False,\
+                if_aligned = True) )
+        dataset = dataset.repeat().prefetch( 10 * batch_size )
+        dataset = dataset.batch( batch_size )
+
+        return dataset.make_one_shot_iterator().get_next()
+
     def testDataStreamFilteredByPose( self, batch_size , pose ):
         dataset = tf.data.TextLineDataset( self._test_file )
         dataset = dataset.filter( lambda line: self._poseFilter( line , pose ) )
@@ -335,6 +396,39 @@ class MTFL( object ):
         dataset = dataset.batch( batch_size )
 
         return dataset.make_one_shot_iterator().get_next()
+
+    def showLandmarks( self , sess , testdataStream ):
+        """
+        trying to show the images very roughly
+            while we need a running session to take all the operations
+            and a dataStream with ( images , landmarks ) as output is needed
+        
+        till now we show the landmarks in a loop tradition
+        """
+        imgs , landmark = sess.run( testdataStream( batch_size = 500 ) )
+
+        red   = ( 0, 0, 255, )
+        blue  = ( 255, 0, 0, )
+        green = ( 0, 255, 0, )
+
+        for i in range( len( imgs ) ):
+            canvas = imgs[i]
+            
+            cv2.circle( canvas , ( int( landmark[i][0] * self._width ) , \
+                    int( landmark[i][5] * self._height ) ) , 3 , red , -1 )
+            cv2.circle( canvas , ( int( landmark[i][1] * self._width ) , \
+                    int( landmark[i][6] * self._height ) ) , 3 , red , -1 )
+            cv2.circle( canvas , ( int( landmark[i][2] * self._width ) , \
+                    int( landmark[i][7] * self._height ) ) , 3 , blue , -1 )
+            cv2.circle( canvas , ( int( landmark[i][3] * self._width ) , \
+                    int( landmark[i][8] * self._height ) ) , 3 , green , -1 )
+            cv2.circle( canvas , ( int( landmark[i][4] * self._width ) , \
+                    int( landmark[i][9] * self._height ) ) , 3 , green , -1 )
+            
+            cv2.imshow( "" , canvas )
+            cv2.waitKey( 0 )
+            #fig = plt.figure()
+            #plt.imshow( canvas )
 
     def exportTestData( self , out_dir , out_size ):
         """
@@ -538,50 +632,4 @@ if __name__ == "__main__":
     #ms_data.exportTestData( '/home/public/data/tmp/testdata' ,\
     #        [112, 96 ] )
 
-   
-    #count = 0 
-    #for kv in ms_data.testImgName_landmark_dict.items():
-    #    count = count + 1
-    #    print( kv )
-    #    if count > 100:
-    #        break
-
-    imgs , landmarks =  sess.run( \
-            ms_data.testDataStreamFilteredByPose( batch_size = 32 , pose = 5 ) )
-
-
-    print( landmarks )
-    for i in range( len( imgs ) ):
-        cv2.imshow( "" , imgs[i] )
-        cv2.waitKey()
-    """
-    iterator = train_eval_input_fn( args.data_path , batch_size = 8 ).make_one_shot_iterator()
-    next_element = iterator.get_next()
-
-    with tf.Session() as sess:
-        image, labels = sess.run( next_element )
-        #image, labels = sess.run( train_eval_input_fn( args.data_path , batch_size = 8 ))
-        for k in range( 8 ):
-            canvas = image['image'][k]
-            landmark = labels['landmarks'][k]
-            pose = labels['pose'][k]
-
-            print( pose )
-
-            test = canvas[:,:,0]
-            # draw left eye
-            x1 = int( landmark[0]) 
-            y1 = int(landmark[5])
-           
-            red = ( 0, 0, 255,)
-            blue = ( 255,0,0,)
-            green = ( 0,255,0,)
-            #cv2.circle( canvas , ( x1, y1 ) , 3 , red , -1 )
-            #cv2.circle( canvas , ( int( landmark[1]), int(landmark[6]) ) , 3 , red , -1 )
-            #cv2.circle( canvas , ( int( landmark[2]), int(landmark[7]) ) , 3 , blue , -1 )
-            #cv2.circle( canvas , ( int( landmark[3]), int(landmark[8]) ) , 3 , green , -1 )
-            #cv2.circle( canvas , ( int( landmark[4]), int(landmark[9]) ) , 3 , green , -1 )
-            fig = plt.figure()
-            plt.imshow( test )
-            plt.show()
-    """
+    ms_data.showLandmarks(  sess , ms_data.testDataStream )
