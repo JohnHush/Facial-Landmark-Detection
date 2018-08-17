@@ -97,9 +97,9 @@ if __name__ == "__main__":
     msData = fetchData.MSCELEB( anno_path , data_path )
     mtflData = fetchData.MTFL( '/home/jh/working_data/MTFL' )
 
-    train_data_ops = msData.trainDataStream( batch_size=256 )
+    train_data_ops = msData.trainDataStreamClipped( batch_size=256 )
     #test_data_ops  = msData.testDataStream( batch_size=256 )
-    test_data_ops  = mtflData.testDataStream( batch_size=256 )
+    test_data_ops  = mtflData.testDataStreamAlignedAndClipped( batch_size=256 )
 
     # i suppose tf.Session is more intuitive
     sess = tf.Session()
@@ -150,16 +150,16 @@ if __name__ == "__main__":
 
     merged = tf.summary.merge_all()
 
-    train_writer = tf.summary.FileWriter( './tflog/train', sess.graph)
-    test_writer = tf.summary.FileWriter( './tflog/test' )
+    train_writer = tf.summary.FileWriter( './tflog/train2_Clipped' )
+    test_writer = tf.summary.FileWriter( './tflog/test2_AlignedClipped' )
 
     sess.run( tf.global_variables_initializer() )
 
-    tf.saved_model.simple_save( sess , './trained_model' , \
-              inputs = { 'images' : input } , \
-              outputs = { 'landmarks' : landmark } )
+    #tf.saved_model.simple_save( sess , './trained_model' , \
+    #          inputs = { 'images' : input } , \
+    #          outputs = { 'landmarks' : landmark } )
 
-    for i in range( 10000 ):
+    for i in range( 1000 ):
         train_images , train_landmarks = sess.run( train_data_ops )
         _ , loss , summary = sess.run(\
                 [ train_op , loss_landmark , \

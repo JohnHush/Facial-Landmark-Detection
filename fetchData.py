@@ -297,6 +297,38 @@ class MSCELEB( object ):
         # i don't use Estimator here
         return tf_image , transformed_landmarks
 
+    def showLandmarks( self , sess , testdataStream ):
+        """
+        trying to show the images very roughly
+            while we need a running session to take all the operations
+            and a dataStream with ( images , landmarks ) as output is needed
+        
+        till now we show the landmarks in a loop tradition
+        """
+        imgs , landmark = sess.run( testdataStream( batch_size = 500 ) )
+
+        red   = ( 0, 0, 255, )
+        blue  = ( 255, 0, 0, )
+        green = ( 0, 255, 0, )
+
+        for i in range( len( imgs ) ):
+            canvas = imgs[i]
+            
+            cv2.circle( canvas , ( int( landmark[i][0] * self._width ) , \
+                    int( landmark[i][5] * self._height ) ) , 3 , red , -1 )
+            cv2.circle( canvas , ( int( landmark[i][1] * self._width ) , \
+                    int( landmark[i][6] * self._height ) ) , 3 , red , -1 )
+            cv2.circle( canvas , ( int( landmark[i][2] * self._width ) , \
+                    int( landmark[i][7] * self._height ) ) , 3 , blue , -1 )
+            cv2.circle( canvas , ( int( landmark[i][3] * self._width ) , \
+                    int( landmark[i][8] * self._height ) ) , 3 , green , -1 )
+            cv2.circle( canvas , ( int( landmark[i][4] * self._width ) , \
+                    int( landmark[i][9] * self._height ) ) , 3 , green , -1 )
+            
+            cv2.imshow( "" , canvas )
+            cv2.waitKey( 0 )
+            #fig = plt.figure()
+            #plt.imshow( canvas )
 class MTFL( object ):
     """
     contains 12,995 images with annotated with:
@@ -388,7 +420,7 @@ class MTFL( object ):
             tf_image = tf.image.resize_images( tf_image , [ self._height , self._width ])
         #tf_image = tf.to_float( tf_image )
 
-        #tf_image = tf_image - 128
+        tf_image = tf_image - 128
         tf_image = tf.scalar_mul( 1./255,  tf_image )
         tf_image = tf.reshape( tf_image , [ self._height, self._width , 3 ] )
 
@@ -787,10 +819,10 @@ if __name__ == "__main__":
    
     data_path = "/Users/pitaloveu/working_data/MTFL"
     #data_path = '/home/jh/working_data/MTFL'
-    #ms_data = MSCELEB( '/home/public/data/celebrity_lmk' , \
-    #        '/home/public/data' )
-    ms_data = MTFL( data_path )
+    ms_data = MSCELEB( '/home/public/data/celebrity_lmk' , \
+            '/home/public/data' )
+    #ms_data = MTFL( data_path )
     #ms_data.exportTestData( '/home/public/data/tmp/testdata' ,\
     #        [112, 96 ] )
 
-    ms_data.showLandmarks(  sess , ms_data.testDataStreamAlignedAndClipped )
+    ms_data.showLandmarks(  sess , ms_data.trainDataStreamClipped )
