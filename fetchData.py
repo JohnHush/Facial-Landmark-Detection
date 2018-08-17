@@ -116,6 +116,72 @@ class MSCELEB( object ):
                 count += buffer.count( '\n' )
         return count
 
+    def _computeBBoxOfLandmarks( self , landmarks ):
+        x1 = landmarks[0]
+        x2 = landmarks[1]
+        x3 = landmarks[2]
+        x4 = landmarks[3]
+        x5 = landmarks[4]
+
+        y1 = landmarks[5]
+        y2 = landmarks[6]
+        y3 = landmarks[7]
+        y4 = landmarks[8]
+        y5 = landmarks[9]
+
+        xmax = tf.maximum( x1 , tf.maximum( x2 , tf.maximum( x3 , \
+                tf.maximum( x4 , x5 ) )))
+
+        xmin = tf.minimum( x1 , tf.minimum( x2 , tf.minimum( x3 , \
+                tf.minimum( x4 , x5 ) )))
+
+        ymax = tf.maximum( y1 , tf.maximum( y2 , tf.maximum( y3 , \
+                tf.maximum( y4 , y5 ) )))
+
+        ymin = tf.minimum( y1 , tf.minimum( y2 , tf.minimum( y3 , \
+                tf.minimum( y4 , y5 ) )))
+
+        return xmax , xmin , ymax , ymin
+
+    def _clipAndResizeBBox( self , tf_image , landmarks ):
+        extend_ratio_X = 0.9
+        extend_ratio_Y = 0.9
+
+        height = tf.to_float( tf.shape( tf_image )[0] )
+        width  = tf.to_float( tf.shape( tf_image )[1] )
+
+        xmax , xmin , ymax , ymin = self._computeBBoxOfLandmarks( landmarks )
+
+        bbox_width  = xmax - xmin
+        bbox_height = ymax - ymin
+
+        clip_x1 = xmin - extend_ratio_X * bbox_width
+        clip_x2 = xmax + extend_ratio_X * bbox_width
+        clip_y1 = ymin - extend_ratio_Y * bbox_height
+        clip_y2 = ymax + extend_ratio_Y * bbox_height
+
+        clip_width = clip_x2 - clip_x1
+        clip_height= clip_y2 - clip_y1
+
+        landmarks = tf.concat( [ ( landmarks[0:5] - clip_x1 ) / clip_width , \
+                ( landmarks[5:]  - clip_y1 ) / clip_height ] , axis = -1 )
+
+        #param_boxes = tf.constant( [ clip_y1 , clip_x1 , clip_y2 , \
+        #        clip_x2 ] , dtype = float , shape = [1,4] )
+        param_boxes = tf.expand_dims ( tf.stack( [ clip_y1 , clip_x1 , clip_y2 , \
+                clip_x2 ] ) , 0 )
+        param_box_ind = tf.constant( [0] , dtype = tf.int32 , shape = [1] )
+        param_crop_size = tf.constant( [self._height , self._width] ,\
+                dtype = tf.int32 , shape = [2] )
+
+        tf_image = tf.expand_dims( tf_image , 0 )
+        tf_image = tf.image.crop_and_resize( tf_image , \
+                param_boxes , \
+                param_box_ind , \
+                param_crop_size )
+
+        return tf_image , landmarks
+
     def _try_fetchIMG( self , try_fetch_path ):
         """
         in initialization, we make some test in fetching
@@ -170,6 +236,18 @@ class MSCELEB( object ):
 
         return dataset.make_one_shot_iterator().get_next()
 
+    def trainDataStreamClipped( self , batch_size , if_shuffle = True ):
+        dataset = tf.data.TextLineDataset( self._train_file )
+        #dataset = dataset.take( self._num_train_images )
+        dataset = dataset.map( lambda line: self._parser( line , \
+                if_clip = True ) )
+        if if_shuffle:
+            dataset = dataset.shuffle( 10 * batch_size )
+        dataset = dataset.repeat().prefetch( 20 * batch_size )
+        dataset = dataset.batch( batch_size )
+
+        return dataset.make_one_shot_iterator().get_next()
+
     def testDataStream( self , batch_size ):
         dataset = tf.data.TextLineDataset( self._test_file )
         #dataset = dataset.skip( self._num_train_images )
@@ -179,7 +257,7 @@ class MSCELEB( object ):
 
         return dataset.make_one_shot_iterator().get_next()
     
-    def _parser( self , line ):
+    def _parser( self , line , if_clip = False ):
         """
         data line in landmark file in a form:
             data_path ID_number x1 y1 x2 y2 x3 y3 x4 y4 x5 y5
@@ -204,7 +282,13 @@ class MSCELEB( object ):
         transformed_landmarks = tf.concat( [ landmarks[0:5] / width, \
                 landmarks[5:10] / height] , -1 )
 
-        tf_image = tf.image.resize_images( tf_image , [ self._height , self._width ] )
+
+        if if_clip:
+            tf_image , transformed_landmarks = \
+                    self._clipAndResizeBBox( tf_image , transformed_landmarks )
+
+        if not if_clip:
+            tf_image = tf.image.resize_images( tf_image , [ self._height , self._width ] )
         tf_image = tf_image - 128
         tf_image = tf.scalar_mul( 1./255,  tf_image )
         tf_image = tf.reshape( tf_image , [ self._height, self._width , 3 ] )
