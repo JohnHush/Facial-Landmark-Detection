@@ -265,7 +265,7 @@ class MTFL( object ):
 
         return tf.equal( fields[-1] , pose )
 
-    def _parser( self , line , if_train , if_aligned = False ):
+    def _parser( self , line , if_train , if_aligned = False , if_clip = False ):
         """
         data line in annotation file in a form:
           relative_data_path  x1 x2 x3 x4 x5 y1 y2 y3 y4 y5 #gender #smile #glass #pose
@@ -294,17 +294,88 @@ class MTFL( object ):
         if if_aligned:
             tf_image , transformed_landmarks = \
                     self._alignLandmark( tf_image , transformed_landmarks )
+        if if_clip:
+            tf_image , transformed_landmarks = \
+                    self._clipAndResizeBBox( tf_image , transformed_landmarks )
 
         #tf_image = tf.image.resize_images( tf_image , [ self._height , self._width ] \
         #        , method = tf.image.ResizeMethod.NEAREST_NEIGHBOR )
-        tf_image = tf.image.resize_images( tf_image , [ self._height , self._width ])
+        if not if_clip:
+            tf_image = tf.image.resize_images( tf_image , [ self._height , self._width ])
         #tf_image = tf.to_float( tf_image )
 
-        tf_image = tf_image - 128
+        #tf_image = tf_image - 128
         tf_image = tf.scalar_mul( 1./255,  tf_image )
         tf_image = tf.reshape( tf_image , [ self._height, self._width , 3 ] )
 
         return tf_image , transformed_landmarks
+
+    def _computeBBoxOfLandmarks( self , landmarks ):
+        x1 = landmarks[0]
+        x2 = landmarks[1]
+        x3 = landmarks[2]
+        x4 = landmarks[3]
+        x5 = landmarks[4]
+
+        y1 = landmarks[5]
+        y2 = landmarks[6]
+        y3 = landmarks[7]
+        y4 = landmarks[8]
+        y5 = landmarks[9]
+
+        xmax = tf.maximum( x1 , tf.maximum( x2 , tf.maximum( x3 , \
+                tf.maximum( x4 , x5 ) )))
+
+        xmin = tf.minimum( x1 , tf.minimum( x2 , tf.minimum( x3 , \
+                tf.minimum( x4 , x5 ) )))
+
+        ymax = tf.maximum( y1 , tf.maximum( y2 , tf.maximum( y3 , \
+                tf.maximum( y4 , y5 ) )))
+
+        ymin = tf.minimum( y1 , tf.minimum( y2 , tf.minimum( y3 , \
+                tf.minimum( y4 , y5 ) )))
+
+        return xmax , xmin , ymax , ymin
+
+    def _clipAndResizeBBox( self , tf_image , landmarks ):
+        extend_ratio_X = 0.9
+        extend_ratio_Y = 0.9
+
+        height = tf.to_float( tf.shape( tf_image )[0] )
+        width  = tf.to_float( tf.shape( tf_image )[1] )
+
+        xmax , xmin , ymax , ymin = self._computeBBoxOfLandmarks( landmarks )
+
+        bbox_width  = xmax - xmin
+        bbox_height = ymax - ymin
+
+        clip_x1 = xmin - extend_ratio_X * bbox_width
+        clip_x2 = xmax + extend_ratio_X * bbox_width
+        clip_y1 = ymin - extend_ratio_Y * bbox_height
+        clip_y2 = ymax + extend_ratio_Y * bbox_height
+
+        clip_width = clip_x2 - clip_x1
+        clip_height= clip_y2 - clip_y1
+
+        landmarks = tf.concat( [ ( landmarks[0:5] - clip_x1 ) / clip_width , \
+                ( landmarks[5:]  - clip_y1 ) / clip_height ] , axis = -1 )
+
+        #param_boxes = tf.constant( [ clip_y1 , clip_x1 , clip_y2 , \
+        #        clip_x2 ] , dtype = float , shape = [1,4] )
+        param_boxes = tf.expand_dims ( tf.stack( [ clip_y1 , clip_x1 , clip_y2 , \
+                clip_x2 ] ) , 0 )
+        param_box_ind = tf.constant( [0] , dtype = tf.int32 , shape = [1] )
+        param_crop_size = tf.constant( [self._height , self._width] ,\
+                dtype = tf.int32 , shape = [2] )
+
+        tf_image = tf.expand_dims( tf_image , 0 )
+        tf_image = tf.image.crop_and_resize( tf_image , \
+                param_boxes , \
+                param_box_ind , \
+                param_crop_size )
+
+        return tf_image , landmarks
+
 
     def _computeAngle( self , landmarks ):
         """
@@ -325,9 +396,6 @@ class MTFL( object ):
         the line contains: image_TENSORS , landmarks_TENSORS
         first we only rotate the image by testing usage
         """
-        #tf_image = tf.contrib.image.rotate( \
-        #        tf_image , 0.2 )
-        #return tf_image , landmarks 
         height = tf.to_float( tf.shape( tf_image )[0] )
         width  = tf.to_float( tf.shape( tf_image )[1] )
 
@@ -383,6 +451,15 @@ class MTFL( object ):
         dataset = tf.data.TextLineDataset( self._test_file )
         dataset = dataset.map( lambda line : self._parser( line , False,\
                 if_aligned = True) )
+        dataset = dataset.repeat().prefetch( 10 * batch_size )
+        dataset = dataset.batch( batch_size )
+
+        return dataset.make_one_shot_iterator().get_next()
+
+    def testDataStreamAlignedAndClipped( self, batch_size ):
+        dataset = tf.data.TextLineDataset( self._test_file )
+        dataset = dataset.map( lambda line : self._parser( line , False,\
+                if_aligned = True , if_clip = True ) )
         dataset = dataset.repeat().prefetch( 10 * batch_size )
         dataset = dataset.batch( batch_size )
 
@@ -632,4 +709,4 @@ if __name__ == "__main__":
     #ms_data.exportTestData( '/home/public/data/tmp/testdata' ,\
     #        [112, 96 ] )
 
-    ms_data.showLandmarks(  sess , ms_data.testDataStream )
+    ms_data.showLandmarks(  sess , ms_data.testDataStreamAlignedAndClipped )
