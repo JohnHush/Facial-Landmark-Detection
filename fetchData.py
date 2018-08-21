@@ -6,6 +6,7 @@ import os
 import matplotlib.pyplot as plt
 from functools import reduce
 import tempfile
+from CONFIGURES import args
 
 class MSCELEB( object ):
     """
@@ -338,10 +339,11 @@ class MTFL( object ):
     wanna details of this dataset, please refer to 
     ECCV 2014 paper "Facial Landmark Detection by Deep Multi-task Learning"
     """
-    def __init__( self , data_path ):
+    def __init__( self , data_path  , config ):
         self._data_path = data_path
-        self._height = 112
-        self._width  = 96
+        self._height = config.img_height
+        self._width  = config.img_width
+        self.args = config
 
         tempfile.tempdir = os.path.join( self._data_path , 'tmp' )
 
@@ -381,11 +383,16 @@ class MTFL( object ):
 
         return tf.equal( fields[-1] , pose )
 
-    def _parser( self , line , if_train , if_aligned = False , if_clip = False ):
+    def _parser(    self , \
+                    line , \
+                    if_train ):
         """
         data line in annotation file in a form:
           relative_data_path  x1 x2 x3 x4 x5 y1 y2 y3 y4 y5 #gender #smile #glass #pose
+
+        augmentation will include
         """
+
         FIELD_DEFAULT = [ ['IMAGE_PATH'] , [0.], [0.],[0.],[0.],[0.],[0.],\
                 [0.],[0.],[0.],[0.], [0], [0] , [0] , [0] ]
 
@@ -407,6 +414,7 @@ class MTFL( object ):
         transformed_landmarks = tf.concat( [ landmarks[0:5] / width, \
                 landmarks[5:10] / height] , -1 )
 
+        """
         if if_aligned:
             tf_image , transformed_landmarks = \
                     self._alignLandmark( tf_image , transformed_landmarks )
@@ -416,16 +424,52 @@ class MTFL( object ):
 
         #tf_image = tf.image.resize_images( tf_image , [ self._height , self._width ] \
         #        , method = tf.image.ResizeMethod.NEAREST_NEIGHBOR )
-        if not if_clip:
+        if not if_clip or not if_aug :
             tf_image = tf.image.resize_images( tf_image , [ self._height , self._width ])
         #tf_image = tf.to_float( tf_image )
 
-        tf_image = tf_image - 128
+        if if_aug:
+            tf_image , transformed_landmarks = \
+                    self._augmentation( tf_image , transformed_landmarks )
+
+        #tf_image = tf_image - 128
         tf_image = tf.scalar_mul( 1./255,  tf_image )
         tf_image = tf.reshape( tf_image , [ self._height, self._width , 3 ] )
-
+        """
         return tf_image , transformed_landmarks
 
+    def _normalize_reshape( self , tf_image , landmarks ):
+        #tf_image = tf_image - 128
+        tf_image = tf.scalar_mul( 1./255,  tf_image )
+        tf_image = tf.reshape( tf_image , [ self._height, self._width , 3 ] )
+        return tf_image , landmarks
+
+    def _resize( self , tf_image , landmarks ):
+        tf_image = tf.image.resize_images( tf_image , [ self._height , self._width ])
+        return tf_image , landmarks
+
+    def _computeInnerBoundary( self , xmin, xmax, ymin, ymax ):
+        bbox_width  = xmax - xmin
+        bbox_heigth = ymax - ymin
+
+        new_xmin = xmin - self.args.inner_left_adding * bbox_width
+        new_xmax = xmax + self.args.inner_right_adding * bbox_width
+        new_ymin = ymin - self.args.inner_up_adding * bbox_heigth
+        new_ymax = ymax + self.args.inner_down_adding * bbox_heigth
+
+        return new_xmin, new_xmax, new_ymin, new_ymax
+    
+    def _computeOuterBoundary( self , xmin , xmax , ymin , ymax ):
+        bbox_width  = xmax - xmin
+        bbox_heigth = ymax - ymin
+
+        new_xmin = xmin - self.args.outer_left_adding * bbox_width
+        new_xmax = xmax + self.args.outer_right_adding * bbox_width
+        new_ymin = ymin - self.args.outer_up_adding * bbox_heigth
+        new_ymax = ymax + self.args.outer_down_adding * bbox_heigth
+
+        return new_xmin, new_xmax, new_ymin, new_ymax
+    
     def _computeBBoxOfLandmarks( self , landmarks ):
         x1 = landmarks[0]
         x2 = landmarks[1]
@@ -452,6 +496,72 @@ class MTFL( object ):
                 tf.minimum( y4 , y5 ) )))
 
         return xmax , xmin , ymax , ymin
+
+    def _augmentation( self , tf_image , landmarks ):
+        xmax , xmin , ymax , ymin = self._computeBBoxOfLandmarks( landmarks )
+        inner_xmin , inner_xmax , inner_ymin , inner_ymax = \
+                self._computeInnerBoundary( xmin, xmax , ymin , ymax )
+
+        outer_xmin, outer_xmax, outer_ymin, outer_ymax = \
+                self._computeOuterBoundary( xmin, xmax , ymin , ymax )
+
+        bbox_xmin = tf.random_uniform( [1] , outer_xmin, inner_xmin, \
+                dtype= tf.float32)[0]
+
+        bbox_xmax = tf.random_uniform( [1] , inner_xmax, outer_xmax, \
+                dtype= tf.float32)[0]
+
+        bbox_ymin = tf.random_uniform( [1] , outer_ymin, inner_ymin, \
+                dtype= tf.float32)[0]
+
+        bbox_ymax = tf.random_uniform( [1] , inner_ymax, outer_ymax, \
+                dtype= tf.float32)[0]
+
+        rotate_angle = tf.random_uniform( [1] , self.args.angle_down , \
+                self.args.angle_up , dtype = tf.float32 )[0]
+
+        tf_image , landmarks = self._rotateImg( tf_image , landmarks , rotate_angle )
+
+        height = tf.to_float( tf.shape( tf_image )[0] )
+        width  = tf.to_float( tf.shape( tf_image )[1] )
+
+        left_up_corner_x , left_up_corner_y = self._project_pt(  bbox_xmin , \
+                bbox_ymin , width, height , rotate_angle )
+        right_down_corner_x , right_down_corner_y = self._project_pt(  bbox_xmax , \
+                bbox_ymax , width, height , rotate_angle )
+        right_up_corner_x , right_up_corner_y = self._project_pt(  bbox_xmax , \
+                bbox_ymin , width, height , rotate_angle )
+        left_down_corner_x , left_down_corner_y = self._project_pt(  bbox_xmin , \
+                bbox_ymax , width, height , rotate_angle )
+
+        clip_x1 = tf.minimum( left_up_corner_x, tf.minimum( right_down_corner_x , \
+                tf.minimum( right_up_corner_x , left_down_corner_x ) ))
+        clip_x2 = tf.maximum( left_up_corner_x, tf.maximum( right_down_corner_x , \
+                tf.maximum( right_up_corner_x , left_down_corner_x ) ))
+        clip_y1 = tf.minimum( left_up_corner_y, tf.minimum( right_down_corner_y, \
+                tf.minimum( right_up_corner_y , left_down_corner_y ) ))
+        clip_y2 = tf.maximum( left_up_corner_y, tf.maximum( right_down_corner_y, \
+                tf.maximum( right_up_corner_y , left_down_corner_y ) ))
+
+        clip_width = clip_x2 - clip_x1
+        clip_height= clip_y2 - clip_y1
+
+        landmarks = tf.concat( [ ( landmarks[0:5] - clip_x1 ) / clip_width , \
+                ( landmarks[5:]  - clip_y1 ) / clip_height ] , axis = -1 )
+
+        param_boxes = tf.expand_dims ( tf.stack( [ clip_y1 , clip_x1 , clip_y2 , \
+                clip_x2 ] ) , 0 )
+        param_box_ind = tf.constant( [0] , dtype = tf.int32 , shape = [1] )
+        param_crop_size = tf.constant( [self._height , self._width] ,\
+                dtype = tf.int32 , shape = [2] )
+
+        tf_image = tf.expand_dims( tf_image , 0 )
+        tf_image = tf.image.crop_and_resize( tf_image , \
+                param_boxes , \
+                param_box_ind , \
+                param_crop_size )
+
+        return tf_image , landmarks
 
     def _clipAndResizeBBox( self , tf_image , landmarks ):
         extend_ratio_X = 0.9
@@ -507,15 +617,53 @@ class MTFL( object ):
         #           y = r * sin( theta )
         return tf.atan2( dy , dx )
 
-    def _alignLandmark( self , tf_image , landmarks ):
+    def _project_pt( self , x , y , width, height , theta ):
+        """
+        x , y is normalized by width and height , respectively
+
+        width and height in pixels
+        theta in degree
+
+        """
+        theta = theta * 3.1415926 / 180
+        projective_matrix = tf.contrib.image.angles_to_projective_transforms( \
+                -theta , height , width )
+
+        a0 = projective_matrix[0][0]
+        a1 = projective_matrix[0][1]
+        a2 = projective_matrix[0][2]
+        b0 = projective_matrix[0][3]
+        b1 = projective_matrix[0][4]
+        b2 = projective_matrix[0][5]
+        c0 = projective_matrix[0][6]
+        c1 = projective_matrix[0][7]
+
+        x = x * width
+        y = y * height
+
+        new_x = ( a0 * x + a1 * y + a2 )/( c0 * x + c1 * y + 1 )
+        new_y = ( b0 * x + b1 * y + b2 )/( c0 * x + c1 * y + 1 )
+
+        new_x = new_x / width
+        new_y = new_y / height
+
+        return new_x , new_y
+
+    def _rotateImg( self , tf_image , landmarks , angle ):
         """
         the line contains: image_TENSORS , landmarks_TENSORS
         first we only rotate the image by testing usage
+
+        angle in degree
+        converts it to radian by: angle * 3.1415926 / 180 
         """
+
         height = tf.to_float( tf.shape( tf_image )[0] )
         width  = tf.to_float( tf.shape( tf_image )[1] )
 
-        theta = self._computeAngle( landmarks )
+        #theta = self._computeAngle( landmarks )
+        
+        theta = angle * 3.1415926 / 180
         inverse_projective_matrix = tf.contrib.image.angles_to_projective_transforms( \
                 theta , height , width )
         projective_matrix = tf.contrib.image.angles_to_projective_transforms( \
@@ -545,11 +693,44 @@ class MTFL( object ):
 
         return tf_image , landmarks
 
-    def trainDataStream( self , batch_size , if_shuffle = True ):
+    def _alignLandmark( self , tf_image , landmarks ):
+        """
+        the line contains: image_TENSORS , landmarks_TENSORS
+        first we only rotate the image by testing usage
+        """
+
+        theta = self._computeAngle( landmarks )
+        tf_image , landmarks = self._rotateImg( \
+                tf_image , landmarks , theta * 180./ 3.1415926 )
+
+    def trainDataStream( self ):
+        """
+        data stream output original image augmented with different
+        brightness and contrast
+
+        lastly resize the image to specified size
+        """
         dataset = tf.data.TextLineDataset( self._train_file )
-        dataset = dataset.map( lambda line : self._parser( line , True ) )
-        if if_shuffle:
-            dataset = dataset.shuffle( 10 * batch_size )
+        dataset = dataset.map( \
+                lambda line : self._parser( line , if_train = True ) )
+        dataset = dataset.map( self._resize )
+        dataset = dataset.map( self._normalize_reshape )
+        if self.args.if_shuffle:
+            dataset = dataset.shuffle( 3 * self.args.train_batch_size )
+        dataset = dataset.repeat().prefetch( 20 * self.args.train_batch_size )
+        dataset = dataset.batch( self.args.train_batch_size )
+
+        return dataset.make_one_shot_iterator().get_next()
+
+    def trainDataStreamAugmented( self ):
+        dataset = tf.data.TextLineDataset( self._train_file )
+        dataset = dataset.map( \
+                lambda line : self._parser( line , if_train = False ))
+        dataset = dataset.map( self._augmentation )
+        dataset = dataset.map( self._normalize_reshape )
+        batch_size = self.args.train_batch_size
+        if self.args.if_shuffle:
+            dataset = dataset.shuffle( 3 * batch_size )
         dataset = dataset.repeat().prefetch( 20 * batch_size )
         dataset = dataset.batch( batch_size )
 
@@ -598,7 +779,7 @@ class MTFL( object ):
         
         till now we show the landmarks in a loop tradition
         """
-        imgs , landmark = sess.run( testdataStream( batch_size = 500 ) )
+        imgs , landmark = sess.run( testdataStream() )
 
         red   = ( 0, 0, 255, )
         blue  = ( 255, 0, 0, )
@@ -651,178 +832,16 @@ class MTFL( object ):
 
             cv2.imwrite( output_path , img )
 
-
-def write_resized_test_img( data_path , output_dir = "resized" ):
-    image_path , landmarks, gender, smile, glasses, pose = \
-            load_path( data_path , if_train = False )
-
-    imgs = list( map( lambda s: cv2.imread( s ) , image_path ) )
-    imgs_resized = list( map ( lambda s: cv2.resize( s , ( 96 , 112 ) ) , imgs ) )
-
-    imgs_resized_path = list( map( lambda s: s.replace( 'AFLW', output_dir, 1 ) , image_path ) )
-
-    for img , path in list( zip( imgs_resized , imgs_resized_path ) ):
-        cv2.imwrite( path , img )
-
-def load_path( data_prefix , if_train = True ):
-    # in the train file, 
-    # formatting as [ "image path", 10 * landmark(float), 4*character(int) ]
-    if if_train:
-        file_path = op.join( data_prefix , "training.txt" )
-    else:
-        file_path = op.join( data_prefix , "testing.txt" )
-
-    # using numpy function to read infor from txt files
-    # read data using str format, then reformatting the numeric values
-    # into demanding ones using astype
-    image_info = np.genfromtxt( file_path, delimiter= " ", unpack=True, dtype = 'str')
-
-    # replace all the '\' in the string by '/'
-    image_info[0] = [ image_info[0][i].replace( "\\" , "/" ) 
-            for i in range( image_info.shape[1] ) ]
-
-    # filter all unexisting files
-    filter_indexes = [ op.isfile( op.join( data_prefix , image_info[0][i] ) ) 
-            for i in range(image_info.shape[1]) ]
-    #image_info[0] = [ op.join( data_prefix, image_info[0][i] )
-    #        for i in range(image_info.shape[1]) ]
-
-    image_info = image_info[:,filter_indexes]
-
-    # fetch data_path, 10 landmarks and 4 characters
-    # and reshape , then transpose to feed into 
-    # dataset using from_tensor_slices method
-    image_path = np.array([ op.join( data_prefix , image_info[0][i] )
-        for i in range( image_info.shape[1])] )
-    landmarks  = np.transpose( image_info[1:11].astype( float ) )
-    gender     = image_info[11].astype( int )
-    smile      = image_info[12].astype( int )
-    glasses    = image_info[13].astype( int )
-    pose       = image_info[14].astype( int )
-
-    return image_path , landmarks, gender, smile, glasses, pose
-
-def fetch_numpy_arrays( data_prefix , is_train ):
-    """
-    the method will load the path in the training.txt or testing.txt files
-    
-    then load the images and scale them into fixed size, recently, 96(width) * 112(height)
-        scale the image so the they will be the same size, it can feed into TF
-    """
-    if is_train:
-        image_path , landmarks, gender, smile, glasses, pose = load_path( data_prefix , True )
-    else:
-        image_path , landmarks, gender, smile, glasses, pose = load_path( data_prefix , False )
-
-    imgs = list( map( lambda s: cv2.imread(s) , image_path ) )
-
-    def resize_fn( img_landmark_pairs ):
-        img = img_landmark_pairs[0]
-        lan = img_landmark_pairs[1]
-
-        heigh = 1. * img.shape[0]
-        width = 1. * img.shape[1]
-        
-        lan[ 0:5 ] = lan[ 0:5 ] / width
-        lan[ 5:10] = lan[ 5:10] / heigh
-
-        img_resize = cv2.resize( img , ( 96 , 112 ) )
-        return img_resize , lan
-
-    # transfer all the landmarks and images into fixed size, landmarks to the range [0, 1]
-    imgs_landmarks = list( map( resize_fn , list( zip( imgs , landmarks ) ) ) )
-    imgs      = np.array( [ x[0] for x in imgs_landmarks ] )
-    landmarks = np.array( [ x[1] for x in imgs_landmarks ] )
-
-    return imgs, landmarks, gender, smile, glasses, pose
-
-def train_input_fn_v2( img_placeholder, l, g, s, gl, p, batch_size = 128 ):
-    # the img_placeholder will hold a numpy of imgs
-    # the img numpy array is too large so need to be inserted as this way
-    dataset = tf.data.Dataset.from_tensor_slices( ( img_placeholder, l, g, s, gl, p ) )
-    dataset = dataset.map( input_parser_v2 )
-    dataset = dataset.repeat().shuffle( 5 * batch_size ).batch( batch_size )
-
-    return dataset
-
-def evaluate_input_fn_v2( data_prefix, batch_size = 128 ):
-    i, l, g, s, gl, p = load_path( data_prefix, False )
-
-    img_np = np.array( list( map( lambda s: cv2.imread( s ) , i ) ) )
-
-    dataset = tf.data.Dataset.from_tensor_slices( ( img_np, l, g, s, gl, p ) )
-    dataset = dataset.map( input_parser_v2 )
-    dataset = dataset.batch( batch_size )
-
-    return dataset
-
-def input_parser_v2( image, landmarks, gender, smile, glasses, pose ):
-    # image augmentation using tf image module
-    tf_image = tf.image.random_brightness( image , max_delta = 0.5 )
-    tf_image = tf.image.random_contrast( tf_image , 0.2 , 0.7 )
-
-    # don't need to do the resize anymore
-    # it's has been done in the outside
-    tf_image = tf.to_float( tf_image - 128 )
-    tf_image = tf.scalar_mul( 1./255, tf_image )
-
-    return dict( image = tf_image ) , dict ( landmarks = landmarks, 
-            gender = gender, smile = smile, glasses = glasses, pose = pose )
-
-def train_input_fn( data_prefix, batch_size = 128 ):
-
-    i, l, g, s, gl, p = load_path( data_prefix, True )
-
-    dataset = tf.data.Dataset.from_tensor_slices( (i, l, g, s, gl, p ) )
-    dataset = dataset.map( input_parser )
-    dataset = dataset.repeat().shuffle( 5 * batch_size ).batch( batch_size )
-
-    return dataset
-
-def evaluate_input_fn( data_prefix, batch_size = 128 ):
-
-    i, l, g, s, gl, p = load_path( data_prefix, False )
-
-    dataset = tf.data.Dataset.from_tensor_slices( (i, l, g, s, gl, p ) )
-    dataset = dataset.map( input_parser )
-    dataset = dataset.batch( batch_size )
-
-    return dataset
-
-def input_parser( image_path, landmarks, gender, smile, glasses, pose ):
-
-    content = tf.read_file( image_path )
-    tf_image = tf.image.decode_jpeg( content , channels = 3 )
-
-    # image augmentation using tf image module
-    # 
-    tf_image = tf.image.random_brightness( tf_image , max_delta = 0.5 )
-    tf_image = tf.image.random_contrast( tf_image , 0.2 , 0.7 )
-
-    # scale the landmarks in the range 0 to 1
-    height = tf.to_double( tf.shape( tf_image )[0] )
-    width  = tf.to_double( tf.shape( tf_image )[1] )
-
-    transformed_landmarks = tf.concat( [ landmarks[0:5] / width, \
-            landmarks[5:10] / height] , -1 )
-
-    tf_image = tf.image.resize_images( tf_image , [ 112 , 96 ] )
-    tf_image = tf_image - 128
-    tf_image = tf.scalar_mul( 1./255,  tf_image )
-    tf_image = tf.reshape( tf_image , [ 112 , 96 , 3 ] )
-
-    return dict( image = tf_image ) , dict ( landmarks = transformed_landmarks, 
-            gender = gender, smile = smile, glasses = glasses, pose = pose )
-
 if __name__ == "__main__":
     sess = tf.InteractiveSession()
    
     data_path = "/Users/pitaloveu/working_data/MTFL"
     #data_path = '/home/jh/working_data/MTFL'
-    ms_data = MSCELEB( '/home/public/data/celebrity_lmk' , \
-            '/home/public/data' )
-    #ms_data = MTFL( data_path )
+    #ms_data = MSCELEB( '/home/public/data/celebrity_lmk' , \
+    #        '/home/public/data' )
+    ms_data = MTFL( data_path , args )
     #ms_data.exportTestData( '/home/public/data/tmp/testdata' ,\
     #        [112, 96 ] )
 
-    ms_data.showLandmarks(  sess , ms_data.trainDataStreamClipped )
+    ms_data.showLandmarks(  sess , ms_data.trainDataStreamAugmented )
+    #ms_data.showLandmarks(  sess , ms_data.trainDataStream )
