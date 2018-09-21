@@ -463,6 +463,7 @@ class MSCELEB( Data ):
         new_ymax = ymax + self._config.outer_down_adding * bbox_heigth
 
         return new_xmin, new_xmax, new_ymin, new_ymax
+
 class MTFL( Data ):
     """
     contains 12,995 images with annotated with:
@@ -709,12 +710,15 @@ class MTFL( Data ):
         return new_xmin, new_xmax, new_ymin, new_ymax
 
 if __name__ == "__main__":
-    sess = tf.InteractiveSession()
    
-    data_path = "/Users/pitaloveu/working_data/MTFL"
-    #data_path = '/home/jh/working_data/MTFL'
-    #ms_data = MSCELEB( '/home/public/data/celebrity_lmk' , \
-    #        '/home/public/data' )
-    ms_data = MTFL(  args )
+    args.data_path = "/home/public/data"
+    args.tempdir_path = "/home/public/data/tmp"
+    args.anno_path = "/home/public/data/celebrity_lmk"
+    args.if_augmentation = True
+    args.train_batch_size = 100
 
+    ms_data = MSCELEB( args )
+    #ms_data = MTFL( args )
+
+    sess = tf.InteractiveSession()
     ms_data.showBatch(  sess , ms_data.trainDataStream )

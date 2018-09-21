@@ -9,8 +9,10 @@ class args( object ):
     just inherit this class
     """
     # data related
-    data_path = "/Users/pitaloveu/working_data/MTFL"
-    tempdir_path = "/Users/pitaloveu/working_data/MTFL/tmp"
+    data_path = ""
+    tempdir_path = ""
+    anno_path = ""
+    train_ratio = 0.9
     train_batch_size = 20
     test_batch_size = 5
 
@@ -25,7 +27,7 @@ class args( object ):
     #   (1). translation in X and Y direction
     #   (2). rotation
     #   (3). zoom in or out
-    if_augmentation = True
+    if_augmentation = False
 
     # output data image size
     img_height = 224
