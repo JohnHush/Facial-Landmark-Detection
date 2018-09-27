@@ -275,7 +275,7 @@ class MSCELEB( Data ):
                 count += buffer.count( '\n' )
         return count
 
-    def _parser( self , line , if_clip = False ):
+    def _parser( self , line ):
         """
         data line in landmark file in a form:
             data_path ID_number x1 y1 x2 y2 x3 y3 x4 y4 x5 y5
@@ -721,4 +721,5 @@ if __name__ == "__main__":
     #ms_data = MTFL( args )
 
     sess = tf.InteractiveSession()
+    i, l = sess.run( ms_data.trainDataStream() )
     ms_data.showBatch(  sess , ms_data.trainDataStream )

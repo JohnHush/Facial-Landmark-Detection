@@ -4,6 +4,7 @@ import fetchData
 import os
 import numpy as np
 from CONFIGURES import args
+import tensorflow_hub as hub
 
 def pixel_deviation( x1 , y1 , x2 , y2 ):
     """
@@ -93,16 +94,19 @@ if __name__ == "__main__":
     args.tempdir_path = "/home/public/data/tmp"
     args.img_height = 96
     args.img_width  = 96
+    args.train_batch_size = 128
+    args.test_batch_size  = 128
+    args.if_augmentation = True
 
     data = fetchData.MSCELEB( args )
 
-    train_op = data.trainDataStream()
-    test_op  = data.testDataStream()
+    trainData_op = data.trainDataStream()
+    testData_op  = data.testDataStream()
 
     sess = tf.Session()
 
     m = hub.Module( os.path.join( "/home/jh/working_data/models/tensorflow_hub/"
-        "8120b7321d9e14533232b1ddd4a74db35324b638" ) , trainable = False  )
+        "8120b7321d9e14533232b1ddd4a74db35324b638" ) , trainable = True  )
 
     #tf.saved_model.loader.load( sess , [tf.saved_model.tag_constants.TRAINING] , \
     #        saved_model_dir )
@@ -113,10 +117,10 @@ if __name__ == "__main__":
     imgs_feature = graph.get_tensor_by_name( \
             "module/hub_output/feature_vector/SpatialSqueeze:0" )
 
-    labels = tf.placeholder( tf.float32 , [None, 10] , name = "labels" )
+    labels = tf.placeholder( tf.float32 , [None, 10] )
     landmarks = slim.fully_connected( imgs_feature , 10 , scope = "landmark", \
             activation_fn = tf.sigmoid )
-    loss = tf.losses.mean_squared_error( labels, landmarks , name = "loss" ) 
+    loss = tf.losses.mean_squared_error( labels, landmarks ) 
 
     tf.summary.scalar( "loss" , loss )
 
@@ -159,21 +163,21 @@ if __name__ == "__main__":
 
     saver = tf.train.Saver()
 
-    for i in range( 10000 ):
-        train_images , train_landmarks = sess.run( train_op )
-        _ , loss , summary = sess.run( [ train_op , loss , merged ],\
+    for i in range( 100000 ):
+        train_images , train_landmarks = sess.run( trainData_op )
+        _ , LOSS , summary = sess.run( [ train_op , loss , merged ],\
                 feed_dict = { imgs: train_images , labels : train_landmarks })
 
         train_writer.add_summary( summary , i )
-        print( "training loss equals to : %f" % loss  )
+        print( "training loss equals to : %f" % LOSS  )
 
-        if i%200 == 0:
+        if i%500 == 0:
             save_path = saver.save( sess , "./tmp/model.ckpt" )
-            print( "Model saved in path: %s" , % save_path )
+            print( "Model saved in path: %s" % save_path )
 
-        if i% 50 == 0:
-            test_images , test_landmarks = sess.run( test_data_ops )
-            loss, summary = sess.run( [ loss , merged ], \
+        if i%50 == 0:
+            test_images , test_landmarks = sess.run( testData_op )
+            LOSS, summary = sess.run( [ loss , merged ], \
                     feed_dict = { imgs: test_images, labels: test_landmarks } )
 
             test_writer.add_summary( summary , i )
